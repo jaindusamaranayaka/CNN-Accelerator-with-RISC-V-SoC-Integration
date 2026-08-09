@@ -1,6 +1,6 @@
 `timescale 1ns / 1ps
 
-module lineBuffer #(
+module lineBufferAXI #(
     parameter int DATA_WIDTH = 8,
     parameter int ROW_LENGTH = 8
 )(
@@ -26,5 +26,3 @@ module lineBuffer #(
 
     assign data_out = buffer[ROW_LENGTH-1];
 endmodule
-
-

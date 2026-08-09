@@ -17,7 +17,7 @@ module tb_slidingWindowAXI;
     logic                  m_axis_tvalid;
     logic                  m_axis_tready;
 
-    // Instantiate Device Under Test (DUT)
+    // Instantiate DUT
     slidingWindowAXI #(
         .DATA_WIDTH(DATA_WIDTH),
         .ROW_LENGTH(ROW_LENGTH)
@@ -32,72 +32,69 @@ module tb_slidingWindowAXI;
         .m_axis_tready(m_axis_tready)
     );
 
-    initial begin
-        $dumpfile("dump.vcd");$dumpvars(0,dut);
-    end
-
     // Clock Generator
     always #(CLK_PERIOD / 2) clk = ~clk;
 
-    // Test stimulus
+    // Direct assignment prevents 1-cycle non-blocking delay
+    int pixel_counter;
+    assign s_axis_tdata = pixel_counter[DATA_WIDTH-1:0];
+
+    // Pixel Counter Increment on Valid Handshake
+    always_ff @(posedge clk or negedge rstn) begin
+        if (!rstn) begin
+            pixel_counter <= 1;
+        end else if (s_axis_tvalid && s_axis_tready) begin
+            pixel_counter <= pixel_counter + 1;
+        end
+    end
+
+    // Test Control Sequence
     initial begin
-        // Initialize signals
+        $dumpfile("dump.vcd");
+        $dumpvars(0, tb_slidingWindowAXI);
+
         clk           = 0;
         rstn          = 0;
-        s_axis_tdata  = 0;
         s_axis_tvalid = 0;
-        m_axis_tready = 1; // Downstream ready by default
+        m_axis_tready = 1;
 
-        // Apply Reset
+        // Reset
         #(CLK_PERIOD * 2);
         rstn = 1;
         $display("--- Reset Released ---");
 
-        // Step 1: Stream sequential pixels into the module
-        for (int pixel = 1; pixel <= 40; pixel++) begin
-            @(posedge clk);
-            s_axis_tvalid <= 1'b1;
-            s_axis_tdata  <= pixel;
+        // Start Streaming
+        @(posedge clk);
+        s_axis_tvalid = 1'b1;
 
-            // Wait if upstream handshaking is stalled
-            while (!s_axis_tready) @(posedge clk);
-        end
+        // Wait until pixel 24 is handshaked
+        wait(pixel_counter == 25);
 
-        // Step 2: Inject backpressure (downstream not ready) mid-stream
+        // Apply Backpressure
         $display("--- Applying Downstream Backpressure ---");
-        m_axis_tready <= 1'b0;
-        
-        for (int pixel = 41; pixel <= 45; pixel++) begin
-            @(posedge clk);
-            s_axis_tvalid <= 1'b1;
-            s_axis_tdata  <= pixel;
-        end
+        m_axis_tready = 1'b0;
 
-        // Step 3: Release backpressure
-        @(posedge clk);
+        repeat (4) @(posedge clk);
+
+        // Release Backpressure
         $display("--- Releasing Backpressure ---");
-        m_axis_tready <= 1'b1;
+        m_axis_tready = 1'b1;
 
-        // Stream remaining pixels
-        for (int pixel = 46; pixel <= 64; pixel++) begin
-            @(posedge clk);
-            s_axis_tvalid <= 1'b1;
-            s_axis_tdata  <= pixel;
-        end
+        // Run through remaining pixels
+        wait(pixel_counter == 49);
 
-        // End Stream
         @(posedge clk);
-        s_axis_tvalid <= 1'b0;
+        s_axis_tvalid = 1'b0;
 
         #(CLK_PERIOD * 10);
         $display("--- Simulation Completed ---");
         $finish;
     end
 
-    // Monitor output window once primed
+    // Console Logger
     always @(posedge clk) begin
         if (m_axis_tvalid && m_axis_tready) begin
-            $display("Time %0t ps | Valid Matrix:", $time);
+            $display("Time %0t ps | Valid Matrix Output:", $time);
             $display("  [%3d %3d %3d]", m_axis_tdata[0][0], m_axis_tdata[0][1], m_axis_tdata[0][2]);
             $display("  [%3d %3d %3d]", m_axis_tdata[1][0], m_axis_tdata[1][1], m_axis_tdata[1][2]);
             $display("  [%3d %3d %3d]", m_axis_tdata[2][0], m_axis_tdata[2][1], m_axis_tdata[2][2]);

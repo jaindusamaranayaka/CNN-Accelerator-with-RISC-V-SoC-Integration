@@ -1,3 +1,6 @@
+`include "lineBufferAXI.sv"
+`timescale 1ns / 1ps
+
 module slidingWindowAXI #(
     parameter int DATA_WIDTH = 8,
     parameter int ROW_LENGTH = 8
@@ -16,35 +19,35 @@ module slidingWindowAXI #(
     input logic m_axis_tready
 );
 
-    // AXI STREAM BLOCK
-    
     localparam int LATENCY = (2 * ROW_LENGTH) + 2; 
     logic [$clog2(LATENCY) : 0] valid_counter;
-    logic en; // Clock Enable
+    logic en;
 
-    assign s_axis_tready = m_axis_tready || !m_axis_tvalid;
+    assign s_axis_tready = m_axis_tready;
     assign en = s_axis_tvalid && s_axis_tready;
 
     always_ff @(posedge clk or negedge rstn) begin
         if (!rstn) begin
             valid_counter <= '0;
             m_axis_tvalid <= 1'b0;
-        end else if (en) begin
-            if (valid_counter < LATENCY) begin
-                valid_counter <= valid_counter + 1'b1;
-                m_axis_tvalid <= 1'b0;
-            end else begin 
-                m_axis_tvalid <= 1'b1;
+        end else begin
+            if (en) begin
+                if (valid_counter < LATENCY) begin
+                    valid_counter <= valid_counter + 1'b1;
+                    m_axis_tvalid <= 1'b0;
+                end else begin 
+                    m_axis_tvalid <= 1'b1;
+                end
+            end else if (m_axis_tready) begin
+                m_axis_tvalid <= m_axis_tvalid;
             end
         end
     end
 
-    // SLIDING WINDOW BLOCK
-
     logic [DATA_WIDTH-1:0] line_out_1;
     logic [DATA_WIDTH-1:0] line_out_2;
 
-    lineBuffer  #(
+    lineBufferAXI #(
         .DATA_WIDTH(DATA_WIDTH),
         .ROW_LENGTH(ROW_LENGTH)
     ) buffer1 (
@@ -55,7 +58,7 @@ module slidingWindowAXI #(
         .data_out(line_out_1)
     );
 
-    lineBuffer #(
+    lineBufferAXI #(
         .DATA_WIDTH(DATA_WIDTH),
         .ROW_LENGTH(ROW_LENGTH)
     ) buffer2 (
@@ -78,7 +81,6 @@ module slidingWindowAXI #(
                 reg_row_3[i] <= '0;
             end
         end else if (en) begin
-
             reg_row_1[0] <= s_axis_tdata;
             reg_row_1[1] <= reg_row_1[0];
             reg_row_1[2] <= reg_row_1[1];
