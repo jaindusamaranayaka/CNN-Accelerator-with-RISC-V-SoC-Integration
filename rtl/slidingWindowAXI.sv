@@ -16,6 +16,8 @@ module slidingWindowAXI #(
     input logic m_axis_tready
 );
 
+    // AXI STREAM BLOCK
+    
     localparam int LATENCY = (2 * ROW_LENGTH) + 2; 
     logic [$clog2(LATENCY) : 0] valid_counter;
     logic en; // Clock Enable
@@ -37,6 +39,7 @@ module slidingWindowAXI #(
         end
     end
 
+    // SLIDING WINDOW BLOCK
 
     logic [DATA_WIDTH-1:0] line_out_1;
     logic [DATA_WIDTH-1:0] line_out_2;
