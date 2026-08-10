@@ -8,12 +8,12 @@ module slidingWindowAXI #(
     input logic clk,
     input logic rstn,
 
-    // Input Pixel Stream
+    // Input Pixel Stream (Slave)
     input logic [DATA_WIDTH-1:0] s_axis_tdata,
     input logic s_axis_tvalid,
     output logic s_axis_tready,
 
-    // 3x3 Matrix Output Stream
+    // 3x3 Matrix Output Stream (Master)
     output logic [DATA_WIDTH-1:0] m_axis_tdata [0:2] [0:2],
     output logic m_axis_tvalid,
     input logic m_axis_tready
