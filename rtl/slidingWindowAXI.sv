@@ -19,7 +19,7 @@ module slidingWindowAXI #(
     input logic m_axis_tready
 );
 
-    localparam int LATENCY = (2 * ROW_LENGTH) + 2; 
+    localparam int LATENCY = (2 * ROW_LENGTH) + 2;  // actual startup latency = LATENCY + 1, due to else comparison being made on the next clock cycle  
     logic [$clog2(LATENCY) : 0] valid_counter;
     logic en;
 
@@ -32,15 +32,13 @@ module slidingWindowAXI #(
             m_axis_tvalid <= 1'b0;
         end else begin
             if (en) begin
-                if (valid_counter < LATENCY) begin
+                if (valid_counter < LATENCY) begin 
                     valid_counter <= valid_counter + 1'b1;
                     m_axis_tvalid <= 1'b0;
                 end else begin 
                     m_axis_tvalid <= 1'b1;
                 end
-            end else if (m_axis_tready) begin
-                m_axis_tvalid <= m_axis_tvalid;
-            end
+            end 
         end
     end
 
