@@ -39,11 +39,11 @@ module slidingWindowAXI #(
         end else begin
             if (en) begin
                 pixel_count <= pixel_count + 1'b1;
-                m_axis_tvalid <= window_valid;
+                
             end
         end
     end
-
+    assign m_axis_tvalid = window_valid;
     always_ff @(posedge clk or negedge rstn) begin
         if (!rstn) begin
             live_row <= '0;
