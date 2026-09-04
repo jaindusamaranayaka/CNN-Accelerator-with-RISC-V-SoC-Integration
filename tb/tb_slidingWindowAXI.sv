@@ -26,7 +26,7 @@ module tb_slidingWindowAXI;
         rstn = 1;
         m_axis_tready = 1;
         s_axis_tvalid = 1;
-        for (int i = 1; i < 30; i++) begin
+        for (int i = 1; i < 51; i++) begin
           	@(negedge clk);
             s_axis_tdata = i;
             
@@ -35,8 +35,19 @@ module tb_slidingWindowAXI;
         $finish();
     end
 
-    logic [DATA_WIDTH-1:0] sent_pixels [0:30];
+    logic [DATA_WIDTH-1:0] sent_pixels [0:49];
     int n;
+    logic expected_valid;
+    assign expected_valid = (((n-1) >= dut.LATENCY) && (((n-1) % ROW_LENGTH) >= 2));
+
+    always @(negedge clk) begin
+        if (expected_valid == m_axis_tvalid) begin
+        end else begin
+            $display("expected_valid = %0d not matching m_axis_tvalid = %0d, n = %0d, time = %0d", expected_valid, m_axis_tvalid, n, $time);
+        
+        end
+    end
+
 
     function automatic logic [DATA_WIDTH-1:0] predict (int n, int offset);
         int idx;

@@ -22,6 +22,9 @@ module slidingWindowAXI #(
     localparam int LATENCY = (2 * ROW_LENGTH) + 2;  // actual startup latency = LATENCY + 1, due to else comparison being made on the next clock cycle  
     logic [$clog2(LATENCY) : 0] valid_counter;
     logic en;
+    logic [$clog2(ROW_LENGTH)-1 : 0] col;
+    logic window_valid;
+
 
     assign s_axis_tready = m_axis_tready;
     assign en = s_axis_tvalid && s_axis_tready;
@@ -34,13 +37,30 @@ module slidingWindowAXI #(
             if (en) begin
                 if (valid_counter < LATENCY) begin 
                     valid_counter <= valid_counter + 1'b1;
-                    m_axis_tvalid <= 1'b0;
-                end else begin 
-                    m_axis_tvalid <= 1'b1;
                 end
+                m_axis_tvalid <= window_valid; 
+            
             end 
         end
     end
+
+    assign window_valid = (valid_counter >= LATENCY) && (col >= 2);
+
+    always_ff @(posedge clk or negedge rstn) begin // Horizontal 
+        if (!rstn) begin
+            col <= '0;
+        end else begin
+            if (en) begin
+                if (col == ROW_LENGTH - 1) begin
+                    col <= '0;
+                end else begin
+                    col <= col + 1;
+                end
+            end
+        end
+    end
+
+
 
     logic [DATA_WIDTH-1:0] line_out_1;
     logic [DATA_WIDTH-1:0] line_out_2;
