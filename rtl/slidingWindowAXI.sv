@@ -121,7 +121,7 @@ module slidingWindowAXI #(
 
     int center_index;
     logic [$clog2(ROW_LENGTH)-1:0] center_row, center_col;
-    logic right_ok, left_ok, top_ok;
+    logic right_ok, left_ok, top_ok, bottom_ok;
 
     always_comb begin
         center_index = pixel_count - (ROW_LENGTH + 2);
@@ -137,7 +137,8 @@ module slidingWindowAXI #(
 
     assign right_ok = (center_col <= ROW_LENGTH - 2);  
     assign left_ok  = (center_col >= 1);            
-    assign top_ok   = (center_row >= 1);             
+    assign top_ok   = (center_row >= 1);     
+    assign bottom_ok = (center_row <= ROW_LENGTH - 2);        
     always_comb begin
         m_axis_tdata[0][0] = (top_ok && right_ok) ? reg_row_3[0] : '0;
         m_axis_tdata[0][1] = (top_ok)             ? reg_row_3[1] : '0;
@@ -147,9 +148,9 @@ module slidingWindowAXI #(
         m_axis_tdata[1][1] = reg_row_2[1];
         m_axis_tdata[1][2] = (left_ok)  ? reg_row_2[2] : '0;
 
-        m_axis_tdata[2][0] = (right_ok) ? reg_row_1[0] : '0;
-        m_axis_tdata[2][1] = reg_row_1[1];
-        m_axis_tdata[2][2] = (left_ok)  ? reg_row_1[2] : '0;
+        m_axis_tdata[2][0] = (right_ok && bottom_ok) ? reg_row_1[0] : '0;
+        m_axis_tdata[2][1] = (bottom_ok)             ? reg_row_1[1] : '0;
+        m_axis_tdata[2][2] = (left_ok && bottom_ok)  ? reg_row_1[2] : '0;
     end
 
 endmodule

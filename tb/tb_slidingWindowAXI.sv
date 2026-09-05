@@ -26,7 +26,7 @@ module tb_slidingWindowAXI;
         rstn = 1;
         m_axis_tready = 1;
         s_axis_tvalid = 1;
-        for (int i = 1; i < 51; i++) begin
+      for (int i = 1; i < 65; i++) begin
           	@(negedge clk);
             s_axis_tdata = i;
             
@@ -35,7 +35,7 @@ module tb_slidingWindowAXI;
         $finish();
     end
 
-    logic [DATA_WIDTH-1:0] sent_pixels [0:49];
+  logic [DATA_WIDTH-1:0] sent_pixels [0:63];
     int n;
     logic expected_valid;
     assign expected_valid = (n >= ROW_LENGTH + 2);
@@ -58,7 +58,7 @@ module tb_slidingWindowAXI;
             return sent_pixels[idx];
     endfunction
 
-    function automatic void get_masks (int n, output logic right_ok, output logic left_ok, output logic top_ok);
+    function automatic void get_masks (int n, output logic right_ok, output logic left_ok, output logic top_ok, output logic bottom_ok);
         int center_index;
         int center_row, center_col;
 
@@ -75,6 +75,7 @@ module tb_slidingWindowAXI;
         right_ok = (center_col <= ROW_LENGTH - 2);
         left_ok = (center_col >= 1);
         top_ok = (center_row >= 1);
+        bottom_ok = (center_row <= ROW_LENGTH - 2);
 
     endfunction
 
@@ -91,9 +92,9 @@ module tb_slidingWindowAXI;
 
     always @(negedge clk) begin // Checker
         if (m_axis_tvalid) begin
-            logic right_ok, left_ok, top_ok;
+            logic right_ok, left_ok, top_ok, bottom_ok;
             logic [DATA_WIDTH-1:0] expected_masked;
-            get_masks(n, right_ok, left_ok, top_ok);
+            get_masks(n, right_ok, left_ok, top_ok, bottom_ok);
 
             expected_masked = (top_ok && right_ok) ? predict(n-1, 2*ROW_LENGTH) : '0;
             if (m_axis_tdata[0][0] !== expected_masked)
@@ -119,15 +120,15 @@ module tb_slidingWindowAXI;
             if (m_axis_tdata[1][2] !== expected_masked)
                 $display("MISMATCH [1][2] at time %0t: expected %0d, got %0d",$time, expected_masked, m_axis_tdata[1][2]);
 
-            expected_masked = (right_ok) ? predict(n-1, 0) : '0;
+            expected_masked = (right_ok && bottom_ok) ? predict(n-1, 0) : '0;
             if (m_axis_tdata[2][0] !== expected_masked)
                 $display("MISMATCH [2][0] at time %0t: expected %0d, got %0d",$time, expected_masked, m_axis_tdata[2][0]);
 
-            expected_masked = predict(n-1, 1);
+            expected_masked = (bottom_ok) ? predict(n-1, 1) : '0;
             if (m_axis_tdata[2][1] !== expected_masked)
                 $display("MISMATCH [2][1] at time %0t: expected %0d, got %0d",$time, expected_masked, m_axis_tdata[2][1]);
 
-            expected_masked = (left_ok) ? predict(n-1, 2) : '0;
+            expected_masked = (left_ok && bottom_ok) ? predict(n-1, 2) : '0;
             if (m_axis_tdata[2][2] !== expected_masked)
                 $display("MISMATCH [2][2] at time %0t: expected %0d, got %0d",$time, expected_masked, m_axis_tdata[2][2]);
             

@@ -75,18 +75,16 @@ row and column independently, which breaks at row boundaries (doesn't
 "borrow" correctly; this was a real bug found and fixed during
 development — see Known Issues Fixed).
 
-Three flags gate the 8 non-center slots based on the center's position:
+Four flags gate the 8 non-center slots based on the center's position:
 
 ```
-right_ok = (center_col <= ROW_LENGTH-2)   // real neighbor one column right
-left_ok  = (center_col >= 1)               // real neighbor one column left
-top_ok   = (center_row >= 1)               // real neighbor one row up
+right_ok  = (center_col <= ROW_LENGTH-2)   // real neighbor one column right
+left_ok   = (center_col >= 1)              // real neighbor one column left
+top_ok    = (center_row >= 1)              // real neighbor one row up
+bottom_ok = (center_row <= ROW_LENGTH-2)   // real neighbor one row down
 ```
 
-**Known limitation:** bottom edge and right-past-last-row are **not**
-handled — that requires the image height `H`, which this module doesn't
-currently receive as a parameter. Left and top edges are fully handled and
-verified.
+**Square-image assumption:** `bottom_ok` reuses `ROW_LENGTH` as the image height (no separate height parameter exists). This is a deliberate simplification, not a general solution — a non-square image would need its own height input and a corresponding change to `bottom_ok`.
 
 ## Testbench
 
@@ -113,11 +111,14 @@ on the waveform."
 
 - [x] Line buffer + 3×3 window (register-array version)
 - [x] `window_valid` (row/column boundary correctness)
-- [x] Padding — left/top edges, internally masked, fully verified
-- [ ] Padding — bottom/right edges (needs image height `H` as a new parameter/input)
+- [x] Padding — all four edges (left/top/right/bottom), internally masked, fully verified for one full frame
 - [ ] BRAM-inferable circular line buffer (current version is a full shift register)
 - [ ] Re-verify AXI-Stream master handoff to Member 1 once the above are settled
 - [ ] Quartus synthesis check — confirm BRAM inference, resource usage, timing
+
+## Open questions for the team
+
+- **Multi-frame operation is untested and its contract is undefined.** This module's position-tracking counters (`pixel_count`, `live_row`, `center_row`) never wrap on their own — they only reset via `rstn`. Streaming pixels continuously past one full frame with no `rstn` pulse in between produces incorrect behavior (row-position math computes nonsensical values once past the frame boundary). **Current assumption: one image is tested per reset — `rstn` must be pulsed between frames.** Whether that's actually how Member 3's control FSM will drive this module (a reset pulse per frame vs. some other frame-boundary signal) hasn't been confirmed — needs a conversation with Member 3 before multi-frame operation can be trusted.
 
 ## Known issues found & fixed during development
 
