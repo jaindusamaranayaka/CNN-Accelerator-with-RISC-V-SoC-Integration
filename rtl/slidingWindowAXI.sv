@@ -19,11 +19,8 @@ module slidingWindowAXI #(
     input logic m_axis_tready
 );
 
-    logic [31:0] pixel_count;  // free-running, non-saturating count of completed
-                               // transfers — unlike the old valid_counter, this
-                               // must NOT freeze, since center_index below needs
-                               // it to keep advancing for the whole image, not
-                               // just up to a one-time startup threshold.
+    logic [31:0] pixel_count;
+
     logic en;
     logic [$clog2(ROW_LENGTH)-1 : 0] live_col;
     logic [$clog2(ROW_LENGTH)-1 : 0] live_row;
@@ -35,7 +32,6 @@ module slidingWindowAXI #(
     always_ff @(posedge clk or negedge rstn) begin
         if (!rstn) begin
             pixel_count <= '0;
-            m_axis_tvalid <= 1'b0;
         end else begin
             if (en) begin
                 pixel_count <= pixel_count + 1'b1;
@@ -56,9 +52,6 @@ module slidingWindowAXI #(
         end
     end
 
-    // window_valid: true once the CENTER slot (reg_row_2[1]) holds a real pixel.
-    // Center's true index = live_index - (ROW_LENGTH+1) = (pixel_count-1) - (ROW_LENGTH+1)
-    //                      = pixel_count - (ROW_LENGTH+2)
     assign window_valid = (pixel_count >= ROW_LENGTH + 2);
 
     always_ff @(posedge clk or negedge rstn) begin // Horizontal
@@ -126,9 +119,6 @@ module slidingWindowAXI #(
         end
     end
 
-    // ---- Padding mask, derived from the CENTER's true (row,col), not from
-    // ---- live_row/live_col subtracted independently (that was the bug:
-    // ---- it doesn't account for borrowing across a row boundary).
     int center_index;
     logic [$clog2(ROW_LENGTH)-1:0] center_row, center_col;
     logic right_ok, left_ok, top_ok;
@@ -144,13 +134,10 @@ module slidingWindowAXI #(
         end
     end
 
-    // NOTE: bottom edge / right-past-last-row is NOT handled here — that
-    // needs image height H, which this module doesn't receive yet. Only
-    // left and top edges are handled (documented open item).
-    assign right_ok = (center_col <= ROW_LENGTH-2);  // slot [0] of each reg_row (one col right of center)
-    assign left_ok  = (center_col >= 1);             // slot [2] of each reg_row (one col left of center)
-    assign top_ok   = (center_row >= 1);              // reg_row_3 (one row above center)
 
+    assign right_ok = (center_col <= ROW_LENGTH - 2);  
+    assign left_ok  = (center_col >= 1);            
+    assign top_ok   = (center_row >= 1);             
     always_comb begin
         m_axis_tdata[0][0] = (top_ok && right_ok) ? reg_row_3[0] : '0;
         m_axis_tdata[0][1] = (top_ok)             ? reg_row_3[1] : '0;
