@@ -1,1 +1,17 @@
 Research/1982-kung-why-systolic-architecture.pdf
+*.qsf
+*.qpf
+*.flock
+*.db_info
+*.tdf
+*.cdb
+*.qmsg
+*.hdb
+*.xml
+*.rdb
+*.bak
+*.summary
+*.rpt
+*.done
+/incremental_db
+/db
