@@ -1,9 +1,8 @@
-`include "lineBufferAXI.sv"
 `timescale 1ns / 1ps
 
-module slidingWindowAXI #(
+module slidingWindowAXIBRAM #(
     parameter int DATA_WIDTH = 8,
-    parameter int ROW_LENGTH = 8
+    parameter int ROW_LENGTH = 640
 ) (
     input logic clk,
     input logic rstn,
@@ -20,6 +19,8 @@ module slidingWindowAXI #(
 );
 
     logic [31:0] pixel_count;
+
+    
 
     logic en;
     logic [$clog2(ROW_LENGTH)-1 : 0] live_col;
@@ -39,6 +40,8 @@ module slidingWindowAXI #(
             end
         end
     end
+
+    
     assign m_axis_tvalid = window_valid;
     always_ff @(posedge clk or negedge rstn) begin
         if (!rstn) begin
@@ -52,7 +55,7 @@ module slidingWindowAXI #(
         end
     end
 
-    assign window_valid = (pixel_count >= ROW_LENGTH + 2);
+    assign window_valid = (pixel_count >= ROW_LENGTH + 4);
 
     always_ff @(posedge clk or negedge rstn) begin // Horizontal
         if (!rstn) begin
@@ -71,7 +74,7 @@ module slidingWindowAXI #(
     logic [DATA_WIDTH-1:0] line_out_1;
     logic [DATA_WIDTH-1:0] line_out_2;
 
-    lineBufferAXI #(
+    lineBufferAXIBRAM #(
         .DATA_WIDTH(DATA_WIDTH),
         .ROW_LENGTH(ROW_LENGTH)
     ) buffer1 (
@@ -82,7 +85,7 @@ module slidingWindowAXI #(
         .data_out(line_out_1)
     );
 
-    lineBufferAXI #(
+    lineBufferAXIBRAM #(
         .DATA_WIDTH(DATA_WIDTH),
         .ROW_LENGTH(ROW_LENGTH)
     ) buffer2 (
@@ -96,6 +99,22 @@ module slidingWindowAXI #(
     logic [DATA_WIDTH-1:0] reg_row_1 [0:2];
     logic [DATA_WIDTH-1:0] reg_row_2 [0:2];
     logic [DATA_WIDTH-1:0] reg_row_3 [0:2];
+    
+    logic [DATA_WIDTH-1:0] s_axis_tdata_delay;
+    logic [DATA_WIDTH-1:0] s_axis_tdata_delay2;
+    logic [DATA_WIDTH-1:0] line_out_1_delay;
+    always_ff @(posedge clk or negedge rstn) begin
+        if (!rstn) begin
+            s_axis_tdata_delay <= '0;
+            s_axis_tdata_delay2 <= '0;
+            line_out_1_delay <= '0;
+        end else if (en) begin
+            s_axis_tdata_delay <= s_axis_tdata;
+            s_axis_tdata_delay2 <= s_axis_tdata_delay;
+            line_out_1_delay <= line_out_1;
+        end 
+    end
+
 
     always_ff @(posedge clk or negedge rstn) begin
         if (!rstn) begin
@@ -105,11 +124,11 @@ module slidingWindowAXI #(
                 reg_row_3[i] <= '0;
             end
         end else if (en) begin
-            reg_row_1[0] <= s_axis_tdata;
+            reg_row_1[0] <= s_axis_tdata_delay2;
             reg_row_1[1] <= reg_row_1[0];
             reg_row_1[2] <= reg_row_1[1];
 
-            reg_row_2[0] <= line_out_1;
+            reg_row_2[0] <= line_out_1_delay;
             reg_row_2[1] <= reg_row_2[0];
             reg_row_2[2] <= reg_row_2[1];
 
@@ -124,7 +143,7 @@ module slidingWindowAXI #(
     logic right_ok, left_ok, top_ok, bottom_ok;
 
     always_comb begin
-        center_index = pixel_count - (ROW_LENGTH + 2);
+        center_index = pixel_count - (ROW_LENGTH + 4);
         if (center_index >= 0) begin
             center_row = center_index / ROW_LENGTH;
             center_col = center_index % ROW_LENGTH;
