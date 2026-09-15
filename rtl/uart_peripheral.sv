@@ -1,33 +1,26 @@
 `timescale 1 ns / 1 ps
-
 module uart_peripheral #(
     parameter CLK_FREQ  = 50000000,
     parameter BAUD_RATE = 115200
 )(
     input  logic        clk,
     input  logic        resetn,
-
     input  logic        valid,
     input  logic [31:0] addr,
     input  logic [31:0] wdata,
     input  logic [ 3:0] wstrb,
     output logic [31:0] rdata,
     output logic        ready,
-
     input  logic        uart_rx,
     output logic        uart_tx
 );
-
     localparam CLOCK_DIVIDE = CLK_FREQ / BAUD_RATE;
-
     logic        rx_valid;
     logic [ 7:0] rx_data;
     logic        rx_read_ack;
-
     logic        tx_start;
     logic [ 7:0] tx_data;
     logic        tx_ready;
-
     always_ff @(posedge clk or negedge resetn) begin
         if (!resetn) begin
             ready       <= 1'b0;
@@ -38,10 +31,8 @@ module uart_peripheral #(
             ready       <= 1'b0;
             tx_start    <= 1'b0;
             rx_read_ack <= 1'b0;
-
             if (valid && !ready) begin
                 ready <= 1'b1;
-
                 if (wstrb != 4'b0000) begin
                     if (addr[3:0] == 4'h0 && tx_ready) begin
                         tx_data  <= wdata[7:0];
@@ -60,14 +51,11 @@ module uart_peripheral #(
             end
         end
     end
-
     logic [15:0] tx_clk_cnt;
     logic [ 3:0] tx_bit_cnt;
     logic [ 9:0] tx_shift;
-
     assign uart_tx = tx_shift[0];
     assign tx_ready = (tx_bit_cnt == 0);
-
     always_ff @(posedge clk or negedge resetn) begin
         if (!resetn) begin
             tx_clk_cnt <= 0;
@@ -89,12 +77,10 @@ module uart_peripheral #(
             end
         end
     end
-
     logic [15:0] rx_clk_cnt;
     logic [ 3:0] rx_bit_cnt;
     logic [ 7:0] rx_shift;
     logic        rx_sync1, rx_sync2;
-
     always_ff @(posedge clk or negedge resetn) begin
         if (!resetn) begin
             rx_sync1 <= 1'b1;
@@ -104,7 +90,6 @@ module uart_peripheral #(
             rx_sync2 <= rx_sync1;
         end
     end
-
     always_ff @(posedge clk or negedge resetn) begin
         if (!resetn) begin
             rx_clk_cnt <= 0;
@@ -114,7 +99,6 @@ module uart_peripheral #(
         end else begin
             if (rx_read_ack)
                 rx_valid <= 1'b0;
-
             if (rx_bit_cnt == 0) begin
                 if (!rx_sync2) begin
                     rx_clk_cnt <= CLOCK_DIVIDE / 2;
@@ -124,7 +108,6 @@ module uart_peripheral #(
                 if (rx_clk_cnt == CLOCK_DIVIDE - 1) begin
                     rx_clk_cnt <= 0;
                     rx_bit_cnt <= rx_bit_cnt - 1;
-
                     if (rx_bit_cnt > 1) begin
                         rx_shift <= {rx_sync2, rx_shift[7:1]};
                     end else if (rx_bit_cnt == 1) begin
@@ -139,5 +122,4 @@ module uart_peripheral #(
             end
         end
     end
-
 endmodule
