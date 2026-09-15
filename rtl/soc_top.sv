@@ -2,13 +2,11 @@
 
 module soc_top (
     input  logic        CLOCK_50,
-    input  logic [3:0]  KEY, // KEY[0] used for reset
+    input  logic [3:0]  KEY,
 
-    // UART pins
     input  logic        UART_RXD,
     output logic        UART_TXD,
 
-    // 7-Segment Displays
     output logic [6:0]  HEX0,
     output logic [6:0]  HEX1,
     output logic [6:0]  HEX2,
@@ -19,21 +17,23 @@ module soc_top (
     output logic [6:0]  HEX7
 );
 
-    // Internal signals matching old port names
+    // ----------------------------------------------------------------
+    // Clocking & Reset
+    // ----------------------------------------------------------------
     logic        clk;
     logic        resetn;
     logic        uart_rx;
     logic        uart_tx;
     logic [31:0] gpio_out;
 
-    assign clk = CLOCK_50;
-    assign resetn = KEY[0]; // Active low reset from push button
-    assign uart_rx = UART_RXD;
+    assign clk      = CLOCK_50;
+    assign resetn   = KEY[0];
+    assign uart_rx  = UART_RXD;
     assign UART_TXD = uart_tx;
 
-    // ==========================================
-    // Interconnect Signals
-    // ==========================================
+    // ----------------------------------------------------------------
+    // CPU Memory Bus
+    // ----------------------------------------------------------------
     logic        mem_valid;
     logic        mem_instr;
     logic        mem_ready;
@@ -42,57 +42,51 @@ module soc_top (
     logic [ 3:0] mem_wstrb;
     logic [31:0] mem_rdata;
 
-    // Slaves
-    logic        ram_valid;
-    logic        ram_ready;
+    // ----------------------------------------------------------------
+    // Slave Handshake Signals
+    // ----------------------------------------------------------------
+    logic        ram_valid,      ram_ready;
     logic [31:0] ram_rdata;
 
-    logic        uart_valid;
-    logic        uart_ready;
+    logic        uart_valid,     uart_ready;
     logic [31:0] uart_rdata;
 
-    logic        img_bram_valid;
-    logic        img_bram_ready;
+    logic        img_bram_valid, img_bram_ready;
     logic [31:0] img_bram_rdata;
 
-    logic        out_bram_valid;
-    logic        out_bram_ready;
+    logic        out_bram_valid, out_bram_ready;
     logic [31:0] out_bram_rdata;
 
-    logic        mac_ctrl_valid;
-    logic        mac_ctrl_ready;
+    logic        mac_ctrl_valid, mac_ctrl_ready;
     logic [31:0] mac_ctrl_rdata;
 
-    logic        gpio_valid;
-    logic        gpio_ready;
+    logic        gpio_valid,     gpio_ready;
     logic [31:0] gpio_rdata;
 
-    // ==========================================
+    // ----------------------------------------------------------------
     // PicoRV32 CPU
-    // ==========================================
+    // ----------------------------------------------------------------
     picorv32 #(
         .PROGADDR_RESET(32'h0000_0000)
     ) cpu (
-        .clk        (clk),
-        .resetn     (resetn),
-        .trap       (),
-
-        .mem_valid  (mem_valid),
-        .mem_instr  (mem_instr),
-        .mem_ready  (mem_ready),
-        .mem_addr   (mem_addr),
-        .mem_wdata  (mem_wdata),
-        .mem_wstrb  (mem_wstrb),
-        .mem_rdata  (mem_rdata)
+        .clk       (clk),
+        .resetn    (resetn),
+        .trap      (),
+        .mem_valid (mem_valid),
+        .mem_instr (mem_instr),
+        .mem_ready (mem_ready),
+        .mem_addr  (mem_addr),
+        .mem_wdata (mem_wdata),
+        .mem_wstrb (mem_wstrb),
+        .mem_rdata (mem_rdata)
     );
 
-    // ==========================================
-    // Interconnect FSM
-    // ==========================================
+    // ----------------------------------------------------------------
+    // Interconnect
+    // ----------------------------------------------------------------
     soc_interconnect interconnect (
         .clk            (clk),
         .resetn         (resetn),
-        
         .mem_valid      (mem_valid),
         .mem_instr      (mem_instr),
         .mem_ready      (mem_ready),
@@ -100,181 +94,215 @@ module soc_top (
         .mem_wdata      (mem_wdata),
         .mem_wstrb      (mem_wstrb),
         .mem_rdata      (mem_rdata),
-
         .ram_valid      (ram_valid),
         .ram_ready      (ram_ready),
         .ram_rdata      (ram_rdata),
-
         .uart_valid     (uart_valid),
         .uart_ready     (uart_ready),
         .uart_rdata     (uart_rdata),
-
         .img_bram_valid (img_bram_valid),
         .img_bram_ready (img_bram_ready),
         .img_bram_rdata (img_bram_rdata),
-
         .out_bram_valid (out_bram_valid),
         .out_bram_ready (out_bram_ready),
         .out_bram_rdata (out_bram_rdata),
-
         .mac_ctrl_valid (mac_ctrl_valid),
         .mac_ctrl_ready (mac_ctrl_ready),
         .mac_ctrl_rdata (mac_ctrl_rdata),
-
         .gpio_valid     (gpio_valid),
         .gpio_ready     (gpio_ready),
         .gpio_rdata     (gpio_rdata)
     );
 
-    // ==========================================
-    // Memory (RAM/ROM Stub)
-    // ==========================================
-    // Simple 64KB RAM
-    logic [31:0] ram_memory [0:16383]; // 16K x 32bit = 64KB
-    
+    // ----------------------------------------------------------------
+    // RAM  (64 KB at 0x0000_0000)
+    // ----------------------------------------------------------------
+    logic [31:0] ram_memory [0:16383];
+
     always_ff @(posedge clk) begin
         ram_ready <= 1'b0;
         if (ram_valid && !ram_ready) begin
             ram_ready <= 1'b1;
-            if (mem_wstrb[0]) ram_memory[mem_addr[15:2]][7:0]   <= mem_wdata[7:0];
-            if (mem_wstrb[1]) ram_memory[mem_addr[15:2]][15:8]  <= mem_wdata[15:8];
+            if (mem_wstrb[0]) ram_memory[mem_addr[15:2]][ 7: 0] <= mem_wdata[ 7: 0];
+            if (mem_wstrb[1]) ram_memory[mem_addr[15:2]][15: 8] <= mem_wdata[15: 8];
             if (mem_wstrb[2]) ram_memory[mem_addr[15:2]][23:16] <= mem_wdata[23:16];
             if (mem_wstrb[3]) ram_memory[mem_addr[15:2]][31:24] <= mem_wdata[31:24];
             ram_rdata <= ram_memory[mem_addr[15:2]];
         end
     end
 
-    // ==========================================
-    // Peripherals
-    // ==========================================
+    // ----------------------------------------------------------------
+    // UART Peripheral  (0x1000_0000)
+    // ----------------------------------------------------------------
     uart_peripheral uart (
-        .clk        (clk),
-        .resetn     (resetn),
-        .valid      (uart_valid),
-        .addr       (mem_addr),
-        .wdata      (mem_wdata),
-        .wstrb      (mem_wstrb),
-        .rdata      (uart_rdata),
-        .ready      (uart_ready),
-        .uart_rx    (uart_rx),
-        .uart_tx    (uart_tx)
+        .clk     (clk),
+        .resetn  (resetn),
+        .valid   (uart_valid),
+        .addr    (mem_addr),
+        .wdata   (mem_wdata),
+        .wstrb   (mem_wstrb),
+        .rdata   (uart_rdata),
+        .ready   (uart_ready),
+        .uart_rx (uart_rx),
+        .uart_tx (uart_tx)
     );
 
+    // ----------------------------------------------------------------
+    // GPIO Peripheral  (0x5000_0000)
+    // ----------------------------------------------------------------
     gpio_peripheral gpio (
-        .clk        (clk),
-        .resetn     (resetn),
-        .valid      (gpio_valid),
-        .addr       (mem_addr),
-        .wdata      (mem_wdata),
-        .wstrb      (mem_wstrb),
-        .rdata      (gpio_rdata),
-        .ready      (gpio_ready),
-        .gpio_out   (gpio_out)
+        .clk      (clk),
+        .resetn   (resetn),
+        .valid    (gpio_valid),
+        .addr     (mem_addr),
+        .wdata    (mem_wdata),
+        .wstrb    (mem_wstrb),
+        .rdata    (gpio_rdata),
+        .ready    (gpio_ready),
+        .gpio_out (gpio_out)
     );
 
-    // ==========================================
-    // Hardware Accelerator: Sliding Window (AXI Stream)
-    // ==========================================
-    // Streaming interface signals
-    logic [7:0]  pixel_axis_tdata;
-    logic        pixel_axis_tvalid;
-    logic        pixel_axis_tready;
+    // ----------------------------------------------------------------
+    // Sliding Window  (pixel writes to 0x2000_0000 → 3x3 windows)
+    // ----------------------------------------------------------------
+    logic [7:0] pixel_axis_tdata;
+    logic       pixel_axis_tvalid;
+    logic       pixel_axis_tready;
 
-    // 3x3 Window output from sliding window
-    logic [7:0]  window_data [0:2][0:2];
-    logic        window_valid;
-    logic        window_ready;
+    logic [7:0] window_data [0:2][0:2];
+    logic       window_valid;
+    logic       window_ready;
 
-    // Always ready to consume 3x3 windows for now (until Stage 1 feature1 is attached)
-    assign window_ready = 1'b1;
-
-    // When CPU writes to Image BRAM address range (0x2000_0000), stream the byte into the sliding window
     assign pixel_axis_tdata  = mem_wdata[7:0];
-    assign pixel_axis_tvalid = img_bram_valid && (|mem_wstrb);
+    assign pixel_axis_tvalid = img_bram_valid & (|mem_wstrb);
 
-    // Sliding window instance (28x28 grayscale image, so row length = 28)
     slidingWindowAXI #(
         .DATA_WIDTH(8),
         .ROW_LENGTH(28)
     ) window_gen (
         .clk           (clk),
         .rstn          (resetn),
-
-        // Slave stream (Input pixel stream from CPU)
         .s_axis_tdata  (pixel_axis_tdata),
         .s_axis_tvalid (pixel_axis_tvalid),
         .s_axis_tready (pixel_axis_tready),
-
-        // Master stream (3x3 Matrix Output to future CNN stages)
         .m_axis_tdata  (window_data),
         .m_axis_tvalid (window_valid),
         .m_axis_tready (window_ready)
     );
 
-    // ==========================================
-    // CNN Hardware Accelerator
-    // ==========================================
-    logic [31:0] cnn_class_result;
-    logic        cnn_done;
-    logic [2:0]  dummy_kernel [0:2]; 
-    
-    // Assign dummy kernel to all zeros for now
-    assign dummy_kernel[0] = 3'b000;
-    assign dummy_kernel[1] = 3'b000;
-    assign dummy_kernel[2] = 3'b000;
+    // ----------------------------------------------------------------
+    // Datapath Top  (convolution engine — MAC → adder → quant → ReLU)
+    //
+    // MAC_CTRL register map  (0x4000_0000):
+    //   +0x00  [0]   = start enable  (W) / [1] = result_ready (R)
+    //   +0x04        = weights[31:0]
+    //   +0x08        = weights[63:32]
+    //   +0x0C  [7:0] = weights[71:64]
+    //   +0x10 [15:0] = bias (signed)
+    //   +0x14  [4:0] = shift_s
+    //
+    // OUT_BRAM  (0x3000_0000):
+    //   +0x00        = latched relu_out (read clears result_ready flag)
+    // ----------------------------------------------------------------
+    logic [71:0] dp_weights;
+    logic [15:0] dp_bias;
+    logic [ 4:0] dp_shift_s;
+    logic        dp_enable;
 
-    logic cnn_start;
+    logic signed [7:0] dp_relu_out;
+    logic              dp_valid_out;
+
+    logic        result_ready;
+    logic [31:0] result_latch;
+
     always_ff @(posedge clk or negedge resetn) begin
         if (!resetn) begin
-            cnn_start <= 1'b0;
+            dp_enable   <= 1'b0;
+            dp_weights  <= '0;
+            dp_bias     <= '0;
+            dp_shift_s  <= '0;
         end else if (mac_ctrl_valid && mem_wstrb != 4'b0000) begin
-            cnn_start <= mem_wdata[0]; // Start pulse when CPU writes to bit 0 of MAC_CTRL (0x4000_0000)
-        end else begin
-            cnn_start <= 1'b0; 
+            case (mem_addr[7:0])
+                8'h00: dp_enable          <= mem_wdata[0];
+                8'h04: dp_weights[31:0]   <= mem_wdata;
+                8'h08: dp_weights[63:32]  <= mem_wdata;
+                8'h0C: dp_weights[71:64]  <= mem_wdata[7:0];
+                8'h10: dp_bias            <= mem_wdata[15:0];
+                8'h14: dp_shift_s         <= mem_wdata[4:0];
+                default: ;
+            endcase
         end
     end
 
-    cnn_acc my_cnn (
-        .clk          (clk),
-        .rst          (~resetn),
-        .start        (cnn_start),
-        .window_data  (window_data),
-        .window_valid (window_valid),
-        .kernel       (dummy_kernel),
-        .class_result (cnn_class_result),
-        .done         (cnn_done)
+    logic [71:0] dp_pixels;
+    genvar r, c;
+    generate
+        for (r = 0; r < 3; r++) begin : gen_row
+            for (c = 0; c < 3; c++) begin : gen_col
+                assign dp_pixels[8*(r*3+c+1)-1 -: 8] = window_data[r][c];
+            end
+        end
+    endgenerate
+
+    assign window_ready = dp_enable;
+
+    datapath_top #(
+        .DATA_WIDTH  (8),
+        .PROD_WIDTH  (16),
+        .SHIFT_WIDTH (5),
+        .NUM_TAPS    (9)
+    ) dp (
+        .clk       (clk),
+        .rst_n     (resetn),
+        .valid_in  (window_valid & dp_enable),
+        .pixels    (dp_pixels),
+        .weights   (dp_weights),
+        .bias      ($signed(dp_bias)),
+        .shift_s   (dp_shift_s),
+        .relu_out  (dp_relu_out),
+        .valid_out (dp_valid_out)
     );
 
-    // Bus Handshaking & Control Registers
+    always_ff @(posedge clk or negedge resetn) begin
+        if (!resetn) begin
+            result_ready <= 1'b0;
+            result_latch <= 32'h0;
+        end else begin
+            if (dp_valid_out) begin
+                result_latch <= {{24{dp_relu_out[7]}}, dp_relu_out};
+                result_ready <= 1'b1;
+            end else if (out_bram_valid && mem_wstrb == 4'b0000) begin
+                result_ready <= 1'b0;
+            end
+        end
+    end
+
+    // ----------------------------------------------------------------
+    // Bus Handshake Block
+    // ----------------------------------------------------------------
     always_ff @(posedge clk or negedge resetn) begin
         if (!resetn) begin
             img_bram_ready <= 1'b0;
             img_bram_rdata <= 32'h0;
-
             out_bram_ready <= 1'b0;
             out_bram_rdata <= 32'h0;
-
             mac_ctrl_ready <= 1'b0;
             mac_ctrl_rdata <= 32'h0;
         end else begin
-            // Handshake for Image BRAM writes: acknowledge when slave is ready
             img_bram_ready <= img_bram_valid && (pixel_axis_tready || (mem_wstrb == 4'b0000));
             img_bram_rdata <= 32'h0;
 
-            // Output BRAM interface
             out_bram_ready <= out_bram_valid;
-            out_bram_rdata <= cnn_class_result;
+            out_bram_rdata <= result_latch;
 
-            // MAC Control & Status register interface (0x4000_0000)
-            // Bit 0: Start, Bit 1: CNN Done flag
             mac_ctrl_ready <= mac_ctrl_valid;
-            mac_ctrl_rdata <= {30'h0, cnn_done, 1'b0};
+            mac_ctrl_rdata <= {30'h0, result_ready, dp_enable};
         end
     end
 
-    // ==========================================
-    // 7-Segment Display Decoders
-    // ==========================================
+    // ----------------------------------------------------------------
+    // 7-Segment Display
+    // ----------------------------------------------------------------
     function [6:0] hex_decode;
         input [3:0] data;
         case(data)
@@ -298,7 +326,6 @@ module soc_top (
         endcase
     endfunction
 
-    // Drive 7-segment displays from the gpio_out register
     assign HEX0 = hex_decode(gpio_out[3:0]);
     assign HEX1 = hex_decode(gpio_out[7:4]);
     assign HEX2 = hex_decode(gpio_out[11:8]);

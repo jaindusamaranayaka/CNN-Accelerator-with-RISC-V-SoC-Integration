@@ -1,12 +1,12 @@
 MEMORY
 {
-    /* 64KB RAM at address 0x00000000 */
     RAM (rwx) : ORIGIN = 0x00000000, LENGTH = 0x10000
 }
 
 SECTIONS
 {
     .text : {
+        *(.text.init)
         *(.text)
         *(.text.*)
     } > RAM
@@ -22,8 +22,10 @@ SECTIONS
     } > RAM
 
     .bss : {
+        _sbss = .;
         *(.bss)
         *(.bss.*)
         *(COMMON)
+        _ebss = .;
     } > RAM
 }
