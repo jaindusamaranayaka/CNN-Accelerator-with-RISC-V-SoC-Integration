@@ -175,7 +175,9 @@ module soc_top (
             end
         end
     endgenerate
-    assign window_ready = dp_enable;
+
+    assign window_ready = dp_enable && !fifo_full;
+
     datapath_top #(
         .DATA_WIDTH  (8),
         .PROD_WIDTH  (16),
@@ -192,19 +194,43 @@ module soc_top (
         .relu_out  (dp_relu_out),
         .valid_out (dp_valid_out)
     );
-    always_ff @(posedge clk or negedge resetn) begin
-        if (!resetn) begin
-            result_ready <= 1'b0;
-            result_latch <= 32'h0;
-        end else begin
-            if (dp_valid_out) begin
-                result_latch <= {{24{dp_relu_out[7]}}, dp_relu_out};
-                result_ready <= 1'b1;
-            end else if (out_bram_valid && mem_wstrb == 4'b0000) begin
-                result_ready <= 1'b0;
-            end
+
+    logic        result_ready;
+    
+    // Output FIFO for results
+    logic [7:0] out_fifo [0:1023];
+    logic [9:0] fifo_wr_ptr;
+    logic [9:0] fifo_rd_ptr;
+    logic [10:0] fifo_count;
+    
+    wire fifo_empty = (fifo_count == 0);
+    wire fifo_full = (fifo_count == 1024);
+    
+    assign result_ready = !fifo_empty;
+    
+    always_ff @(posedge clk) begin
+        if (dp_valid_out && !fifo_full) begin
+            out_fifo[fifo_wr_ptr] <= dp_relu_out;
         end
     end
+    
+    always_ff @(posedge clk or negedge resetn) begin
+        if (!resetn) begin
+            fifo_wr_ptr <= 0;
+            fifo_rd_ptr <= 0;
+            fifo_count <= 0;
+        end else begin
+            logic wr_en = dp_valid_out && !fifo_full;
+            logic rd_en = out_bram_valid && !out_bram_ready && mem_wstrb == 4'b0000 && !fifo_empty;
+            
+            if (wr_en) fifo_wr_ptr <= fifo_wr_ptr + 1;
+            if (rd_en) fifo_rd_ptr <= fifo_rd_ptr + 1;
+            
+            if (wr_en && !rd_en) fifo_count <= fifo_count + 1;
+            else if (!wr_en && rd_en) fifo_count <= fifo_count - 1;
+        end
+    end
+
     always_ff @(posedge clk or negedge resetn) begin
         if (!resetn) begin
             img_bram_ready <= 1'b0;
@@ -217,7 +243,7 @@ module soc_top (
             img_bram_ready <= img_bram_valid && (pixel_axis_tready || (mem_wstrb == 4'b0000));
             img_bram_rdata <= 32'h0;
             out_bram_ready <= out_bram_valid;
-            out_bram_rdata <= result_latch;
+            out_bram_rdata <= {{24{out_fifo[fifo_rd_ptr][7]}}, out_fifo[fifo_rd_ptr]};
             mac_ctrl_ready <= mac_ctrl_valid;
             mac_ctrl_rdata <= {30'h0, result_ready, dp_enable};
         end
