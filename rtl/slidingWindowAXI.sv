@@ -19,26 +19,52 @@ module slidingWindowAXI #(
     input logic m_axis_tready
 );
 
-    localparam int LATENCY = (2 * ROW_LENGTH) + 2;  // actual startup latency = LATENCY + 1, due to else comparison being made on the next clock cycle  
-    logic [$clog2(LATENCY) : 0] valid_counter;
+    logic [31:0] pixel_count;
+
     logic en;
+    logic [$clog2(ROW_LENGTH)-1 : 0] live_col;
+    logic [$clog2(ROW_LENGTH)-1 : 0] live_row;
+    logic window_valid;
 
     assign s_axis_tready = m_axis_tready;
     assign en = s_axis_tvalid && s_axis_tready;
 
     always_ff @(posedge clk or negedge rstn) begin
         if (!rstn) begin
-            valid_counter <= '0;
-            m_axis_tvalid <= 1'b0;
+            pixel_count <= '0;
         end else begin
             if (en) begin
-                if (valid_counter < LATENCY) begin 
-                    valid_counter <= valid_counter + 1'b1;
-                    m_axis_tvalid <= 1'b0;
-                end else begin 
-                    m_axis_tvalid <= 1'b1;
+                pixel_count <= pixel_count + 1'b1;
+                
+            end
+        end
+    end
+    assign m_axis_tvalid = window_valid;
+    always_ff @(posedge clk or negedge rstn) begin
+        if (!rstn) begin
+            live_row <= '0;
+        end else begin
+            if (en) begin
+                if (live_col == ROW_LENGTH-1) begin
+                    live_row <= live_row + 1;
                 end
-            end 
+            end
+        end
+    end
+
+    assign window_valid = (pixel_count >= ROW_LENGTH + 2);
+
+    always_ff @(posedge clk or negedge rstn) begin // Horizontal
+        if (!rstn) begin
+            live_col <= '0;
+        end else begin
+            if (en) begin
+                if (live_col == ROW_LENGTH - 1) begin
+                    live_col <= '0;
+                end else begin
+                    live_col <= live_col + 1;
+                end
+            end
         end
     end
 
@@ -93,12 +119,38 @@ module slidingWindowAXI #(
         end
     end
 
+    int center_index;
+    logic [$clog2(ROW_LENGTH)-1:0] center_row, center_col;
+    logic right_ok, left_ok, top_ok, bottom_ok;
+
     always_comb begin
-        for (int c = 0; c < 3; c++) begin
-            m_axis_tdata[0][c] = reg_row_3[c];
-            m_axis_tdata[1][c] = reg_row_2[c];
-            m_axis_tdata[2][c] = reg_row_1[c];
+        center_index = pixel_count - (ROW_LENGTH + 2);
+        if (center_index >= 0) begin
+            center_row = center_index / ROW_LENGTH;
+            center_col = center_index % ROW_LENGTH;
+        end else begin
+            center_row = '0;
+            center_col = '0;
         end
+    end
+
+
+    assign right_ok = (center_col <= ROW_LENGTH - 2);  
+    assign left_ok  = (center_col >= 1);            
+    assign top_ok   = (center_row >= 1);     
+    assign bottom_ok = (center_row <= ROW_LENGTH - 2);        
+    always_comb begin
+        m_axis_tdata[0][0] = (top_ok && right_ok) ? reg_row_3[0] : '0;
+        m_axis_tdata[0][1] = (top_ok)             ? reg_row_3[1] : '0;
+        m_axis_tdata[0][2] = (top_ok && left_ok)  ? reg_row_3[2] : '0;
+
+        m_axis_tdata[1][0] = (right_ok) ? reg_row_2[0] : '0;
+        m_axis_tdata[1][1] = reg_row_2[1];
+        m_axis_tdata[1][2] = (left_ok)  ? reg_row_2[2] : '0;
+
+        m_axis_tdata[2][0] = (right_ok && bottom_ok) ? reg_row_1[0] : '0;
+        m_axis_tdata[2][1] = (bottom_ok)             ? reg_row_1[1] : '0;
+        m_axis_tdata[2][2] = (left_ok && bottom_ok)  ? reg_row_1[2] : '0;
     end
 
 endmodule

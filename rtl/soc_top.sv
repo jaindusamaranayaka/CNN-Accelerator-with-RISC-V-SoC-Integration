@@ -55,7 +55,7 @@ module soc_top (
         .mem_wstrb (mem_wstrb),
         .mem_rdata (mem_rdata)
     );
-    soc_interconnect interconnect (
+    soc_interconnect u_interconnect (
         .clk            (clk),
         .resetn         (resetn),
         .mem_valid      (mem_valid),
@@ -176,6 +176,15 @@ module soc_top (
         end
     endgenerate
 
+    // Output FIFO for results
+    logic [7:0] out_fifo [0:1023];
+    logic [9:0] fifo_wr_ptr;
+    logic [9:0] fifo_rd_ptr;
+    logic [10:0] fifo_count;
+    
+    wire fifo_empty = (fifo_count == 0);
+    wire fifo_full = (fifo_count == 1024);
+
     assign window_ready = dp_enable && !fifo_full;
 
     datapath_top #(
@@ -194,17 +203,6 @@ module soc_top (
         .relu_out  (dp_relu_out),
         .valid_out (dp_valid_out)
     );
-
-    logic        result_ready;
-    
-    // Output FIFO for results
-    logic [7:0] out_fifo [0:1023];
-    logic [9:0] fifo_wr_ptr;
-    logic [9:0] fifo_rd_ptr;
-    logic [10:0] fifo_count;
-    
-    wire fifo_empty = (fifo_count == 0);
-    wire fifo_full = (fifo_count == 1024);
     
     assign result_ready = !fifo_empty;
     
@@ -220,8 +218,8 @@ module soc_top (
             fifo_rd_ptr <= 0;
             fifo_count <= 0;
         end else begin
-            logic wr_en = dp_valid_out && !fifo_full;
-            logic rd_en = out_bram_valid && !out_bram_ready && mem_wstrb == 4'b0000 && !fifo_empty;
+            automatic logic wr_en = dp_valid_out && !fifo_full;
+            automatic logic rd_en = out_bram_valid && !out_bram_ready && mem_wstrb == 4'b0000 && !fifo_empty;
             
             if (wr_en) fifo_wr_ptr <= fifo_wr_ptr + 1;
             if (rd_en) fifo_rd_ptr <= fifo_rd_ptr + 1;

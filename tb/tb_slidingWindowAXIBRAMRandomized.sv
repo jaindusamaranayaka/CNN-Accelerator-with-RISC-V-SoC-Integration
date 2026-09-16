@@ -1,5 +1,21 @@
 `timescale 1ns / 1ps
-module tb_slidingWindowAXIBRAM;
+class StallGen;
+    rand int stall_type;
+    rand int stall_duration;
+
+    constraint c_type {
+        stall_type inside {[0:3]};
+    }
+    constraint c_duration {
+        (stall_type != 0) -> stall_duration inside {[1:5]};
+    }
+
+    function void display();
+        $display("Stall Type = %0d, Stall Duration = %0d", stall_type, stall_duration);
+    endfunction
+endclass
+
+module tb_slidingWindowAXIBRAMRandomized;
     localparam int DATA_WIDTH = 8;
     localparam int ROW_LENGTH = 3;
     logic clk;
@@ -10,6 +26,7 @@ module tb_slidingWindowAXIBRAM;
     logic [DATA_WIDTH-1:0] m_axis_tdata [0:2] [0:2];
     logic m_axis_tvalid;
     logic m_axis_tready;
+    StallGen sg = new();
 
     slidingWindowAXIBRAM #(.DATA_WIDTH(DATA_WIDTH),
                            .ROW_LENGTH(ROW_LENGTH)) dut (.*);
@@ -29,12 +46,30 @@ module tb_slidingWindowAXIBRAM;
         for (int i = 1; i < (ROW_LENGTH*ROW_LENGTH)+1;i++) begin
             @(negedge clk);
             s_axis_tdata = i;
-             /*if (i == 7) begin
-                m_axis_tready = 0;
-                @(negedge clk);
-                repeat(5) @(negedge clk);
-                m_axis_tready = 1; 
-            end */
+            void'(sg.randomize());
+            sg.display();
+            case (sg.stall_type)
+                0: begin
+                    // No stall
+                end
+                1: begin
+                    s_axis_tvalid = 0;
+                    repeat (sg.stall_duration) @(negedge clk);
+                    s_axis_tvalid = 1;
+                end
+                2: begin
+                    m_axis_tready = 0;
+                    repeat (sg.stall_duration) @(negedge clk);
+                    m_axis_tready = 1;
+                end
+                3: begin
+                    m_axis_tready = 0;
+                    s_axis_tvalid = 0;
+                    repeat (sg.stall_duration) @(negedge clk);
+                    m_axis_tready = 1;
+                    s_axis_tvalid = 1;
+                end
+            endcase
         end
         repeat (6) begin
             @(negedge clk);

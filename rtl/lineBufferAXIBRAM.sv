@@ -32,10 +32,8 @@ module lineBufferAXIBRAM #(
     always_ff @(posedge clk or negedge rstn) begin
         if (!rstn) begin
             data_out <= '0;
-        end else begin
-            if (wr_en) begin
-                mem[ptr] <= data_in;
-            end
+        end else if (wr_en) begin
+            mem[ptr] <= data_in;
             data_out <= mem[ptr];
         end
     end
