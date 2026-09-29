@@ -26,7 +26,8 @@ module soc_interconnect (
     input  logic [31:0] mac_ctrl_rdata,
     output logic        gpio_valid,
     input  logic        gpio_ready,
-    input  logic [31:0] gpio_rdata
+    input  logic [31:0] gpio_rdata,
+    output logic        class_weight_valid
 );
     logic sel_ram;
     logic sel_uart;
@@ -34,18 +35,21 @@ module soc_interconnect (
     logic sel_out_bram;
     logic sel_mac_ctrl;
     logic sel_gpio;
+    logic sel_class_weight;
     assign sel_ram      = (mem_addr[31:28] == 4'h0);
     assign sel_uart     = (mem_addr[31:28] == 4'h1);
     assign sel_img_bram = (mem_addr[31:28] == 4'h2);
     assign sel_out_bram = (mem_addr[31:28] == 4'h3);
     assign sel_mac_ctrl = (mem_addr[31:28] == 4'h4);
     assign sel_gpio     = (mem_addr[31:28] == 4'h5);
+    assign sel_class_weight = (mem_addr[31:28] == 4'h6);
     assign ram_valid      = mem_valid & sel_ram;
     assign uart_valid     = mem_valid & sel_uart;
     assign img_bram_valid = mem_valid & sel_img_bram;
     assign out_bram_valid = mem_valid & sel_out_bram;
     assign mac_ctrl_valid = mem_valid & sel_mac_ctrl;
     assign gpio_valid     = mem_valid & sel_gpio;
+    assign class_weight_valid = mem_valid & sel_class_weight;
     always_comb begin
         mem_ready = 1'b0;
         if (sel_ram)      mem_ready = ram_ready;
@@ -54,6 +58,7 @@ module soc_interconnect (
         if (sel_out_bram) mem_ready = out_bram_ready;
         if (sel_mac_ctrl) mem_ready = mac_ctrl_ready;
         if (sel_gpio)     mem_ready = gpio_ready;
+        if (sel_class_weight) mem_ready = 1'b1;
     end
     always_comb begin
         mem_rdata = 32'h0;

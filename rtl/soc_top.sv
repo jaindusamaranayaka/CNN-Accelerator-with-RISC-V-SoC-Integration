@@ -41,6 +41,7 @@ module soc_top (
     logic [31:0] mac_ctrl_rdata;
     logic        gpio_valid,     gpio_ready;
     logic [31:0] gpio_rdata;
+    logic        class_weight_valid;
     picorv32 #(
         .PROGADDR_RESET(32'h0000_0000)
     ) cpu (
@@ -82,9 +83,11 @@ module soc_top (
         .mac_ctrl_rdata (mac_ctrl_rdata),
         .gpio_valid     (gpio_valid),
         .gpio_ready     (gpio_ready),
-        .gpio_rdata     (gpio_rdata)
+        .gpio_rdata     (gpio_rdata),
+        .class_weight_valid(class_weight_valid)
     );
     logic [31:0] ram_memory [0:16383];
+    initial $readmemh("firmware.hex", ram_memory);
     always_ff @(posedge clk) begin
         ram_ready <= 1'b0;
         if (ram_valid && !ram_ready) begin
@@ -176,16 +179,7 @@ module soc_top (
         end
     endgenerate
 
-    // Output FIFO for results
-    logic [7:0] out_fifo [0:1023];
-    logic [9:0] fifo_wr_ptr;
-    logic [9:0] fifo_rd_ptr;
-    logic [10:0] fifo_count;
-    
-    wire fifo_empty = (fifo_count == 0);
-    wire fifo_full = (fifo_count == 1024);
-
-    assign window_ready = dp_enable && !fifo_full;
+    assign window_ready = dp_enable; // No FIFO backpressure needed
 
     datapath_top #(
         .DATA_WIDTH  (8),
@@ -203,29 +197,38 @@ module soc_top (
         .relu_out  (dp_relu_out),
         .valid_out (dp_valid_out)
     );
+
+    logic class_valid;
+    logic [3:0] class_id;
+
+    classifier_top clf (
+        .clk(clk),
+        .rst_n(resetn),
+        .weight_wr_en(class_weight_valid && (|mem_wstrb)),
+        .weight_addr(mem_addr),
+        .weight_wdata(mem_wdata),
+        .valid_in(dp_valid_out),
+        .data_in(dp_relu_out),
+        .valid_out(class_valid),
+        .class_id(class_id)
+    );
+
+    logic [31:0] final_class_reg;
+    logic class_ready_flag;
     
-    assign result_ready = !fifo_empty;
-    
-    always_ff @(posedge clk) begin
-        if (dp_valid_out && !fifo_full) begin
-            out_fifo[fifo_wr_ptr] <= dp_relu_out;
-        end
-    end
-    
+    assign result_ready = class_ready_flag;
+
     always_ff @(posedge clk or negedge resetn) begin
         if (!resetn) begin
-            fifo_wr_ptr <= 0;
-            fifo_rd_ptr <= 0;
-            fifo_count <= 0;
+            final_class_reg <= 0;
+            class_ready_flag <= 0;
         end else begin
-            automatic logic wr_en = dp_valid_out && !fifo_full;
-            automatic logic rd_en = out_bram_valid && !out_bram_ready && mem_wstrb == 4'b0000 && !fifo_empty;
-            
-            if (wr_en) fifo_wr_ptr <= fifo_wr_ptr + 1;
-            if (rd_en) fifo_rd_ptr <= fifo_rd_ptr + 1;
-            
-            if (wr_en && !rd_en) fifo_count <= fifo_count + 1;
-            else if (!wr_en && rd_en) fifo_count <= fifo_count - 1;
+            if (class_valid) begin
+                final_class_reg <= {28'h0, class_id};
+                class_ready_flag <= 1'b1;
+            end else if (out_bram_valid && !out_bram_ready && mem_wstrb == 4'b0000) begin
+                class_ready_flag <= 1'b0; // CPU reads result
+            end
         end
     end
 
@@ -241,7 +244,7 @@ module soc_top (
             img_bram_ready <= img_bram_valid && (pixel_axis_tready || (mem_wstrb == 4'b0000));
             img_bram_rdata <= 32'h0;
             out_bram_ready <= out_bram_valid;
-            out_bram_rdata <= {{24{out_fifo[fifo_rd_ptr][7]}}, out_fifo[fifo_rd_ptr]};
+            out_bram_rdata <= final_class_reg;
             mac_ctrl_ready <= mac_ctrl_valid;
             mac_ctrl_rdata <= {30'h0, result_ready, dp_enable};
         end

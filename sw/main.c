@@ -6,6 +6,10 @@
 #define OUT_BRAM_BASE   0x30000000
 #define MAC_CTRL_BASE   0x40000000
 #define GPIO_BASE       0x50000000
+#define CLASS_WEIGHTS_BASE 0x60000000
+
+#define NUM_DENSE_WEIGHTS 1690
+#define NUM_DENSE_BIASES 10
 
 #define UART_DATA       (*(volatile uint32_t*)(UART_BASE + 0x00))
 #define UART_STATUS     (*(volatile uint32_t*)(UART_BASE + 0x04))
@@ -66,6 +70,26 @@ static void load_weights(const int8_t weights[KERNEL_TAPS], int16_t bias, uint8_
     MAC_SHIFT     = (uint32_t)(shift_s & 0x1F);
 }
 
+static void load_dense_weights(void) {
+    volatile uint32_t *w_mem = (volatile uint32_t *)CLASS_WEIGHTS_BASE;
+    // Receive 1690 weights
+    for (int i = 0; i < NUM_DENSE_WEIGHTS; i++) {
+        int n = i / 169;
+        int p = i % 169;
+        int offset = (n * 256) + p;
+        int8_t w = (int8_t)uart_getchar();
+        w_mem[offset] = (uint32_t)(uint8_t)w;
+    }
+    // Receive 10 biases
+    for (int i = 0; i < NUM_DENSE_BIASES; i++) {
+        uint8_t b_lo = (uint8_t)uart_getchar();
+        uint8_t b_hi = (uint8_t)uart_getchar();
+        int16_t b = (int16_t)((uint16_t)b_hi << 8 | b_lo);
+        int offset = 2560 + i;
+        w_mem[offset] = (uint32_t)(uint16_t)b;
+    }
+}
+
 int main(void) {
     display_hex(0x00000000);
 
@@ -95,28 +119,32 @@ int main(void) {
 
         display_hex(0x22222222);
 
+        /* Load dense layer weights and biases */
+        load_dense_weights();
+
+        display_hex(0x33333333);
+
         /* Stream 784 pixel bytes into the sliding window */
         volatile uint8_t *img = (volatile uint8_t *)IMG_BRAM_BASE;
         for (int i = 0; i < IMAGE_SIZE; i++)
             img[i] = (uint8_t)uart_getchar();
 
-        display_hex(0x33333333);
+        display_hex(0x44444444);
 
-        /* Collect NUM_WINDOWS convolution results and send back */
-        uint32_t results_sent = 0;
-        while (results_sent < NUM_WINDOWS) {
+        /* Collect 1 classification result and send back */
+        while (1) {
             if (MAC_CTRL & MAC_CTRL_RESULT_RDY) {
-                uint32_t val = OUT_RESULT;  /* reading clears result_ready */
+                uint32_t class_id = OUT_RESULT;  /* reading clears result_ready */
                 uart_send_byte('R');
-                uart_send_byte((uint8_t)(val & 0xFF));
-                results_sent++;
+                uart_send_byte((uint8_t)(class_id & 0xFF));
+                break;
             }
         }
 
         /* Disable pipeline */
         MAC_CTRL = 0;
 
-        display_hex(0x44444444);
+        display_hex(0x55555555);
     }
 
     return 0;
