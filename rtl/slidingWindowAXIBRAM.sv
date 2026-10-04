@@ -2,7 +2,8 @@
 
 module slidingWindowAXIBRAM #(
     parameter int DATA_WIDTH = 8,
-    parameter int ROW_LENGTH = 640
+    parameter int ROW_LENGTH = 640,
+    parameter bit PADDING = 0
 ) (
     input logic clk,
     input logic rstn,
@@ -10,39 +11,56 @@ module slidingWindowAXIBRAM #(
     // Input Pixel Stream (Slave)
     input logic [DATA_WIDTH-1:0] s_axis_tdata,
     input logic s_axis_tvalid,
+    input logic s_axis_tuser,
     output logic s_axis_tready,
 
     // 3x3 Matrix Output Stream (Master)
     output logic [DATA_WIDTH-1:0] m_axis_tdata [0:2] [0:2],
     output logic m_axis_tvalid,
     input logic m_axis_tready
+
 );
 
     logic [31:0] pixel_count;
 
     
-
-    logic en;
+    logic pending;
+    logic en;   
     logic [$clog2(ROW_LENGTH)-1 : 0] live_col;
     logic [$clog2(ROW_LENGTH)-1 : 0] live_row;
     logic window_valid;
+    logic interior;
 
     assign s_axis_tready = m_axis_tready;
     assign en = s_axis_tvalid && s_axis_tready;
 
     always_ff @(posedge clk or negedge rstn) begin
         if (!rstn) begin
+            pending <= 1'b0;
+        end else if (en) begin
+            pending <= 1'b1;
+        end else if (m_axis_tvalid && m_axis_tready) begin
+            pending <= 1'b0;
+        end
+    end
+
+
+
+
+    always_ff @(posedge clk or negedge rstn) begin
+        if (!rstn) begin
             pixel_count <= '0;
         end else begin
-            if (en) begin
+            if (en && s_axis_tuser) begin
+                pixel_count <= 1;
+            end else if (en && ~s_axis_tuser) begin
                 pixel_count <= pixel_count + 1'b1;
-                
             end
         end
     end
 
     
-    assign m_axis_tvalid = window_valid;
+    assign m_axis_tvalid = window_valid && pending && (PADDING || interior);
     always_ff @(posedge clk or negedge rstn) begin
         if (!rstn) begin
             live_row <= '0;
@@ -141,7 +159,6 @@ module slidingWindowAXIBRAM #(
     int center_index;
     logic [$clog2(ROW_LENGTH)-1:0] center_row, center_col;
     logic right_ok, left_ok, top_ok, bottom_ok;
-
     always_comb begin
         center_index = pixel_count - (ROW_LENGTH + 4);
         if (center_index >= 0) begin
@@ -157,19 +174,19 @@ module slidingWindowAXIBRAM #(
     assign right_ok = (center_col <= ROW_LENGTH - 2);  
     assign left_ok  = (center_col >= 1);            
     assign top_ok   = (center_row >= 1);     
-    assign bottom_ok = (center_row <= ROW_LENGTH - 2);        
+    assign bottom_ok = (center_row <= ROW_LENGTH - 2);      
+    assign interior = (top_ok && bottom_ok && left_ok && right_ok);  
     always_comb begin
-        m_axis_tdata[0][0] = (top_ok && right_ok) ? reg_row_3[0] : '0;
+        m_axis_tdata[0][0] = (top_ok && left_ok)  ? reg_row_3[2] : '0;
         m_axis_tdata[0][1] = (top_ok)             ? reg_row_3[1] : '0;
-        m_axis_tdata[0][2] = (top_ok && left_ok)  ? reg_row_3[2] : '0;
+        m_axis_tdata[0][2] = (top_ok && right_ok) ? reg_row_3[0] : '0;
 
-        m_axis_tdata[1][0] = (right_ok) ? reg_row_2[0] : '0;
+        m_axis_tdata[1][0] = (left_ok)  ? reg_row_2[2] : '0;
         m_axis_tdata[1][1] = reg_row_2[1];
-        m_axis_tdata[1][2] = (left_ok)  ? reg_row_2[2] : '0;
+        m_axis_tdata[1][2] = (right_ok) ? reg_row_2[0] : '0;
 
-        m_axis_tdata[2][0] = (right_ok && bottom_ok) ? reg_row_1[0] : '0;
+        m_axis_tdata[2][0] = (left_ok && bottom_ok)  ? reg_row_1[2] : '0;
         m_axis_tdata[2][1] = (bottom_ok)             ? reg_row_1[1] : '0;
-        m_axis_tdata[2][2] = (left_ok && bottom_ok)  ? reg_row_1[2] : '0;
+        m_axis_tdata[2][2] = (right_ok && bottom_ok) ? reg_row_1[0] : '0;
     end
-
 endmodule
