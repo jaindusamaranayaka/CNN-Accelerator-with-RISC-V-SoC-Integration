@@ -1,169 +1,108 @@
-# Member 2 — Dataflow & Memory
+# CNN Accelerator with RISC-V SoC Integration
 
-Line buffers, 3×3 sliding window, and edge padding for the FPGA CNN
-accelerator. This module sits between the incoming AXI-Stream pixel feed
-(driven upstream by Member 3's control FSM) and Member 1's MAC array, and
-is responsible for turning a flat, raster-scan pixel stream into a
-continuous stream of 3×3 spatial windows.
+An FPGA system-on-chip that classifies handwritten digits (MNIST, 28×28) using a
+custom CNN accelerator controlled by a PicoRV32 RISC-V soft core.
 
-## Files
+**Target:** Terasic DE2-115 (Cyclone IV E, EP4CE115F29C7), 50 MHz
 
-- `lineBufferAXIBRAM.sv` — single-row delay line, BRAM-inferable circular buffer (single read/write pointer). Confirmed via Quartus (Cyclone IV E) to actually map to M9K blocks.
-- `slidingWindowAXIBRAM.sv` — line buffers + 3×3 register array + validity/padding logic.
-- `tb_slidingWindowAXIBRAM.sv` — self-checking testbench with an independent golden model; includes a targeted, hand-placed backpressure stall test.
-- `tb_slidingWindowAXIBRAMRandomized.sv` — same golden model, plus a constrained-random `StallGen` class driving randomized backpressure stalls (type, duration) on every transfer.
-
-(Earlier shift-register-based versions, `lineBufferAXI.sv`/`slidingWindowAXI.sv`, are superseded by the BRAM versions above and kept only for reference.)
-
-## `lineBufferAXIBRAM`
-
-Parameters: `DATA_WIDTH` (bits/pixel), `ROW_LENGTH` (image width in pixels).
-
-One pixel in per cycle (`wr_en`-gated), and `data_out` reflects whatever
-pixel entered exactly `ROW_LENGTH` cycles earlier — i.e. "the pixel one
-full image row ago" — plus one extra cycle of registered-read latency (see
-below).
-
-**Implementation:** a single memory array (`mem[0:ROW_LENGTH-1]`, tagged
-`(* ramstyle = "M9K" *)`) with one pointer register that writes and reads
-the *same* address each cycle, wrapping at `ROW_LENGTH`. Both the write and
-the (registered) read live in one `always_ff`, matching Intel's recognized
-single-port RAM inference template — confirmed via Quartus's RAM Summary
-report to actually synthesize into M9K blocks (10,240 total memory bits for
-two `ROW_LENGTH=640` buffers, 0 before the fix — see Known Issues Fixed).
-
-**Important: the read is registered, not combinational** (`data_out <=
-mem[ptr]`, inside `always_ff`) — this matches real M9K hardware, which
-registers its read port. This adds exactly **+1 cycle of latency per
-buffer** compared to the old shift-register version's combinational read.
-Since the pipeline chains two of these, `reg_row_2`'s path picks up +1 cycle
-and `reg_row_3`'s path picks up +2, relative to `reg_row_1` (which has no
-buffer in its path at all) — see the compensating delays below.
-
-## `slidingWindowAXIBRAM`
-
-AXI-Stream slave in (`s_axis_tdata/tvalid/tready`), AXI-Stream master out
-(`m_axis_tdata` — a `[3][3]` array — `m_axis_tvalid/tready`).
-
-### Pipeline
-
-Two chained `lineBufferAXIBRAM` instances (`buffer1`, `buffer2`) produce two
-row-delayed copies of the stream. Three 3-deep shift-register rows
-(`reg_row_1/2/3`) are fed from the live stream and the two delayed copies
-respectively, so at any moment they jointly hold a genuine 3×3 spatial
-neighborhood. A combinational block remaps these into `m_axis_tdata`
-(`reg_row_3`→output row 0/top, `reg_row_2`→row 1/middle, `reg_row_1`→row
-2/bottom, matching normal top-to-bottom image reading order).
-
-**Delay compensation (BRAM-specific, not needed in the old shift-register
-version):** because each BRAM buffer adds +1 cycle of registered-read
-latency, and `reg_row_1`/`reg_row_2`/`reg_row_3` pass through 0/1/2 buffers
-respectively, every row's source is padded with extra plain registers so
-all three stay column-aligned:
-- `reg_row_1[0]` fed from `s_axis_tdata` through **2** compensating registers (`s_axis_tdata_delay`, `s_axis_tdata_delay2`).
-- `reg_row_2[0]` fed from `line_out_1` through **1** compensating register (`line_out_1_delay`).
-- `reg_row_3[0]` fed directly from `line_out_2`, no compensation (it already carries the most real delay).
-
-### Position tracking
-
-- `pixel_count` — free-running count of completed transfers (never
-  saturates; only resets via `rstn`).
-- `live_col` / `live_row` — the real image `(row, col)` of the pixel
-  currently arriving. `live_col` wraps every `ROW_LENGTH` pixels; `live_row`
-  increments once per row and does **not** wrap (a new image only begins
-  after reset).
-
-### Validity (`window_valid` / `m_axis_tvalid`)
-
-With padding in place, the module only needs the **center** slot
-(`reg_row_2[1]`) to hold a real pixel — not a fully-surrounded 3×3
-neighborhood. That happens once `pixel_count >= ROW_LENGTH + 4` (the `+4`,
-up from `+2` in the pre-BRAM version, accounts for the two compensating
-register stages now sitting ahead of the center). `m_axis_tvalid` is driven
-combinationally (`assign m_axis_tvalid = window_valid`) so it stays exactly
-in sync with `m_axis_tdata`, with no extra register delay between them.
-Once valid, it stays high for the rest of the frame (no longer drops at row
-boundaries, since padding gives every column a legitimate output).
-
-### Padding
-
-Approach: **internal masking**, not stream injection — no extra pixels are
-sent by anything upstream; instead each of the 8 non-center window slots
-is independently checked against the real image bounds and forced to `0`
-if it would reference a pixel outside them.
-
-The center pixel's true image position is computed as a single combined
-index first (`center_index = pixel_count - (ROW_LENGTH+4)`), then split
-into `center_row`/`center_col` via real division — **not** by subtracting
-row and column independently, which breaks at row boundaries (doesn't
-"borrow" correctly; this was a real bug found and fixed during
-development — see Known Issues Fixed).
-
-Four flags gate the 8 non-center slots based on the center's position:
+## Architecture
 
 ```
-right_ok  = (center_col <= ROW_LENGTH-2)   // real neighbor one column right
-left_ok   = (center_col >= 1)              // real neighbor one column left
-top_ok    = (center_row >= 1)              // real neighbor one row up
-bottom_ok = (center_row <= ROW_LENGTH-2)   // real neighbor one row down
+Laptop --UART--> PicoRV32 --bus--> Sliding window (3x3) --> Conv datapath --> Max pool --> Dense --> Argmax
+                    ^                                                                                  |
+                    +----------------------------- result register / status --------------------------+
 ```
 
-**Square-image assumption:** `bottom_ok` reuses `ROW_LENGTH` as the image height (no separate height parameter exists). This is a deliberate simplification, not a general solution — a non-square image would need its own height input and a corresponding change to `bottom_ok`.
+1. The host sends the weights and a 28×28 image over UART.
+2. Firmware loads the weights into memory-mapped registers and streams the pixels to the accelerator.
+3. The accelerator runs **Conv 3×3 (valid) → ReLU → MaxPool 2×2 → Dense 169→10 → Argmax** entirely in hardware.
+4. The firmware reads the predicted digit, shows it on the 7-segment display, and returns it over UART.
 
-## Testbench
+**Model:** `Conv2d(1→1, 3×3, padding=0)` → ReLU → MaxPool(2) → Linear(169→10), giving 1,710 parameters (`cnn_fpga/train.py`).
 
-Self-checking against an independent golden model — no logic is shared
-with the DUT's own implementation, so a shared bug can't hide from both
-sides:
+## Memory map
 
-- `predict(n, offset)` — looks up what pixel value *should* be at a given
-  register slot, from a testbench-side history array (`sent_pixels[]`).
-- `get_masks(n, ...)` — independently recomputes `right_ok`/`left_ok`/`top_ok`
-  from `n` alone, mirroring the RTL's own derivation.
-- Checks run every cycle: `m_axis_tvalid` against an independently-derived
-  expected-validity signal, and all 9 `m_axis_tdata` positions (data value
-  **and** correct zero-masking) against the combination of the two
-  functions above.
+| Address | Device |
+|---|---|
+| `0x0000_0000` | RAM, 64 KB (firmware) |
+| `0x1000_0000` | UART: `+0x0` data, `+0x4` status (bit 0 TX ready, bit 1 RX valid) |
+| `0x2000_0000` | Pixel stream into the sliding window (write-only) |
+| `0x3000_0000` | Classification result (read clears the ready flag) |
+| `0x4000_0000` | Conv control: `+0x0` enable / status, `+0x4..0xC` weights, `+0x10` bias, `+0x14` shift |
+| `0x5000_0000` | GPIO → 7-segment displays |
+| `0x6000_0000` | Dense weights (`+1024·n + 4·i`) and biases (`+0x2800 + 4·n`) |
 
-Driver holds `tvalid`/`tready` high continuously for the base test, and
-streams enough sequential, distinguishable pixel values to exercise several
-full row wraps. Zero mismatches confirms both the pixel data and the
-padding/validity timing are correct — not just "looks right on the
-waveform."
+## Repository layout
 
-**Backpressure testing:** two additional testbenches stall the handshake
-mid-stream and confirm the design correctly holds all state (no data loss,
-no corruption, no drift) — see `tb_slidingWindowAXIBRAM.sv` (one deliberate,
-hand-placed `m_axis_tready` stall right at the `window_valid` threshold) and
-`tb_slidingWindowAXIBRAMRandomized.sv` (a `StallGen` class randomizing
-which signal(s) stall — `s_axis_tvalid` only, `m_axis_tready` only, or both
-— and for how long, on every transfer). Both pass clean on the current
-design; two real bugs were found and fixed getting here (see Known Issues
-Fixed) — one in the RTL, one in the randomized testbench itself.
+```
+rtl/            SoC top, interconnect, peripherals, sliding window, classifier
+rtl/datapath/   MAC array, adder tree, quantize/saturate, ReLU
+tb/             Testbenches
+sw/             Firmware (start.S, main.c, linker script, Makefile) and host script
+cnn_fpga/       Training and weight extraction (PyTorch)
+```
+
+## Team
+
+| Member | Area |
+|---|---|
+| 1 | Datapath and arithmetic: MAC, adder tree, quantization, ReLU, pooling |
+| 2 | Dataflow and memory: line buffers, 3×3 sliding window, padding ([details](rtl/README_member2.md)) |
+| 3 | SoC integration: CPU, interconnect, peripherals, firmware, timing |
 
 ## Status
 
-- [x] Line buffer + 3×3 window
-- [x] `window_valid` (row/column boundary correctness)
-- [x] Padding — all four edges (left/top/right/bottom), internally masked, fully verified for one full frame
-- [x] BRAM-inferable circular line buffer — implemented, delay-compensated, and **confirmed via Quartus synthesis** (Cyclone IV E / DE2-115) to actually map to M9K blocks, not registers
-- [x] Backpressure/handshake testing — both targeted (single hand-placed stall) and randomized (constrained-random `class`, all 3 stall scenarios × varied durations) testing done and passing; two real bugs found and fixed (see Known Issues Fixed)
-- [ ] Re-verify AXI-Stream master handoff to Member 1
-- [ ] Full Quartus compile (Fitter/Assembler) + timing closure — needs Member 3's SDC constraints first; Analysis & Synthesis alone (sufficient for confirming BRAM inference) has been done
+### Done
+- **Sliding window** (`slidingWindowAXIBRAM`)
+  - BRAM line buffers, confirmed to map to M9K in Quartus.
+  - AXI-Stream handshake: one window per input pixel, safe under backpressure.
+  - Valid and padded convolution modes (`PADDING` parameter).
+  - Start-of-frame restart (`s_axis_tuser`).
+  - Standard left-to-right window order.
+  - Verified by directed and constrained-random stall testbenches in both modes.
+- **Conv datapath:** 9 parallel MACs, pipelined adder tree, shift/saturate and ReLU (7-cycle latency).
+- **Classifier:** max pool, dense layer with CPU-loadable weights, and argmax.
+- **SoC:** PicoRV32, address decoder, UART, GPIO, and firmware for loading weights and streaming pixels.
+- **Model:** training and FP32 weight extraction.
 
-## Open questions for the team
+### To do
 
-- **Multi-frame operation is untested and its contract is undefined.** This module's position-tracking counters (`pixel_count`, `live_row`, `center_row`) never wrap on their own — they only reset via `rstn`. Streaming pixels continuously past one full frame with no `rstn` pulse in between produces incorrect behavior (row-position math computes nonsensical values once past the frame boundary). **Current assumption: one image is tested per reset — `rstn` must be pulsed between frames.** Whether that's actually how Member 3's control FSM will drive this module (a reset pulse per frame vs. some other frame-boundary signal) hasn't been confirmed — needs a conversation with Member 3 before multi-frame operation can be trusted.
+| Owner | Item |
+|---|---|
+| 3 | Fix the `firmware.hex` format: one 32-bit word per line, not one byte (currently the CPU cannot boot) |
+| 3 | Fix the UART receiver bit count (`rx_bit_cnt` 9 → 10) |
+| 3 | Instantiate `slidingWindowAXIBRAM` (`ROW_LENGTH=28`, `PADDING=0`) and connect `s_axis_tuser` |
+| 3 | Make the pixel-stream `tvalid` a single-cycle pulse per store |
+| 3 | Firmware: mark the first pixel of each image (start of frame), and send 2 drain pixels after the image |
+| 3 | Add SDC constraints (50 MHz); run a full compile and timing analysis |
+| 1 | Treat pixels as unsigned in `mac_unit` (unsigned pixel × signed weight) |
+| 1 | Write `quantize.py` (int8 weights, bias and shift) with a bit-exact integer reference model |
+| 2 | Size `pixel_count` to its real range; check the divider timing at 50 MHz |
+| All | End-to-end SoC simulation with a real MNIST digit, compared against the integer reference model |
+| All | Power analysis report |
 
-## Known issues found & fixed during development
+## Build and run
 
-- Off-by-one in the original startup-latency counter's comparison timing (documented in-code, not a functional bug — verified against the diagram spec).
-- Dead code branch in the original `m_axis_tvalid` logic (no-op, removed).
-- Testbench race conditions: driver-vs-DUT stimulus race (fixed by moving stimulus updates to `negedge`), checker-vs-DUT same-posedge race (fixed by sampling on `negedge`).
-- Padding mask computed via independent `live_row`/`live_col` subtraction incorrectly leaked wrong-row data across row boundaries (e.g. a window centered at the last column of a row could show a real-but-unrelated pixel instead of padding zero) — fixed by computing a single combined center index first, then deriving row/col via true division.
-- `pixel_count` (formerly a saturating `valid_counter`) froze after reaching its old startup threshold, permanently freezing the padding mask's position — fixed by making it a genuinely free-running counter.
-- `m_axis_tvalid` was briefly double-registered (one cycle behind `m_axis_tdata`), silently dropping the first valid window — fixed by driving it combinationally instead.
-- **BRAM's registered read silently broke column alignment.** Switching the line buffer to a real M9K-inferring design (registered read, per Intel's required template) added +1 cycle of latency per buffer that the shift-register version never had. Since `reg_row_1`/`2`/`3` pass through 0/1/2 buffers respectively, this desynchronized their column alignment — fixed with explicit compensating registers on `reg_row_1`'s and `reg_row_2`'s sources (2 and 1 extra register stages respectively) so all three rows stay aligned, plus updating `window_valid`'s threshold and `center_index` from `ROW_LENGTH+2` to `ROW_LENGTH+4` to match.
-- **Resetting the BRAM array's contents silently prevents BRAM inference.** Intel/Quartus documentation confirms real Block RAM hardware cannot clear its contents via a reset signal — any HDL that resets a memory array's contents (as opposed to just an output register) gets synthesized as ordinary logic cells instead, with no error, just a "Total memory bits: 0" in the synthesis report. Fixed by removing the reset on `mem[]` in `lineBufferAXIBRAM` (keeping the reset on the separate `data_out` register, which is fine — it's not memory content). Confirmed safe: `window_valid` already guarantees nothing downstream trusts a buffer's output before every address has been written with real data at least once.
-- **Line buffer's read was unconditional, and only backpressure testing exposed it.** `data_out <= mem[ptr]` ran on every clock edge regardless of `wr_en`. During continuous flow this was invisible (the pointer was also frozen exactly when the write was, so re-reading the same address gave the same value) — but during a stall, extensive testing beforehand (padding, all four edges, the full BRAM rework) never exercised this path, since nothing had stalled before. Once a real `m_axis_tready` stall was injected, `line_out_1` kept silently advancing (`mem[ptr]` continuing to update from stale/unwritten data) even while `wr_en=0`, desynchronizing `reg_row_2` and corrupting the output for several transfers after every stall. Fixed by gating the read inside the same `if(wr_en)` as the write, so the buffer's output — like every other signal in this module — genuinely holds its value when not enabled. Worth remembering generally: a signal that "looks safe" only because a specific input condition happens to coincide with another isn't actually proven safe until that assumption itself gets tested.
-- **Randomized backpressure testbench drove a DUT output port.** The "stall both" case in `StallGen`-based testing set `m_axis_tvalid = 0`/`= 1` directly, alongside the correct `s_axis_tvalid`. But `m_axis_tvalid` is the DUT's own output (driven internally by `assign m_axis_tvalid = window_valid`) — the testbench was never supposed to drive it. The resulting driver conflict permanently corrupted `m_axis_tvalid` to a stuck `1` the first time that stall case fired, producing a very convincing-looking (but entirely testbench-side) failure with `expected_valid` mismatches for the rest of the run. Fixed by only stalling the two genuine inputs (`s_axis_tvalid`, `m_axis_tready`) in that case, never the output. Root-caused by isolating variables methodically: confirming a clean, stall-free run at the same image size first, then a clean single-stall run, before trusting the randomized version — which correctly proved the DUT itself was fine and pointed the remaining suspicion at the new driver code.
+**Train and export the model**
+```
+cd cnn_fpga
+python train.py
+python extract_weights.py
+```
+
+**Build the firmware** (needs `riscv32-unknown-elf-gcc`)
+```
+cd sw && make
+```
+
+**Run on the FPGA:** compile in Quartus with `soc_top` as the top level, program the board, then:
+```
+python sw/send_image.py
+```
+
+**Simulate the sliding window:** compile the files in `rtl/` and `tb/` (tested with Cadence Xcelium).
+
+## Known limitations
+
+- Square images only: the padding logic uses `ROW_LENGTH` as the image height.
+- One convolution filter, so accuracy is limited compared with multi-filter CNNs.
