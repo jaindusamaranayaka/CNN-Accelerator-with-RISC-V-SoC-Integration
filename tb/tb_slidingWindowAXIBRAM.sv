@@ -1,5 +1,15 @@
 `timescale 1ns / 1ps
 module tb_slidingWindowAXIBRAM;
+    localparam int DATA_WIDTH = 8;
+    localparam int ROW_LENGTH = 3;
+    logic clk;
+    logic rstn;
+    logic [DATA_WIDTH-1:0] s_axis_tdata;
+    logic s_axis_tvalid;
+    logic s_axis_tready;
+    logic [DATA_WIDTH-1:0] m_axis_tdata [0:2] [0:2];
+    logic m_axis_tvalid;
+    logic m_axis_tready;
 
     localparam int DATA_WIDTH       = 8;
     localparam int ROW_LENGTH       = 5;
@@ -48,18 +58,19 @@ module tb_slidingWindowAXIBRAM;
         rstn          = 1;
         m_axis_tready = 1;
         s_axis_tvalid = 1;
-        for (int f = 0; f < FRAMES; f++) begin
-            for (int i = 0; i < ROW_LENGTH * ROW_LENGTH; i++) begin
+        for (int i = 1; i < (ROW_LENGTH*ROW_LENGTH)+1;i++) begin
+            @(negedge clk);
+            s_axis_tdata = i;
+             /*if (i == 7) begin
+                m_axis_tready = 0;
                 @(negedge clk);
-                s_axis_tdata = 100 * f + i + 1;
-                s_axis_tuser = (i == 0);
-            end
-
-            repeat (DRAIN) begin
-                @(negedge clk);
-                s_axis_tdata = '0;
-                s_axis_tuser = 0;
-            end
+                repeat(5) @(negedge clk);
+                m_axis_tready = 1; 
+            end */
+        end
+        repeat (6) begin
+            @(negedge clk);
+            s_axis_tdata = '0;
         end
         @(negedge clk);
         s_axis_tvalid = 0;
@@ -72,11 +83,14 @@ module tb_slidingWindowAXIBRAM;
 
         $finish();
     end
+    
+  logic [DATA_WIDTH-1:0] sent_pixels [0:63];
+    int n;
+    logic expected_valid;
+    assign expected_valid = (n >= ROW_LENGTH + 4);
 
-    always @(posedge clk) begin
-        if (!rstn) begin
-            n          = 0;
-            tb_pending = 0;
+    always @(negedge clk) begin
+        if (expected_valid == m_axis_tvalid) begin
         end else begin
             if (s_axis_tvalid && s_axis_tready)
                 tb_pending = 1'b1;
@@ -145,7 +159,7 @@ module tb_slidingWindowAXIBRAM;
                      expected_valid, m_axis_tvalid, n, $time);
     end
 
-    always @(negedge clk) begin
+    always @(negedge clk) begin // Checker
         if (m_axis_tvalid) begin
             logic                  right_ok, left_ok, top_ok, bottom_ok;
             logic [DATA_WIDTH-1:0] expected_masked;
@@ -188,5 +202,7 @@ module tb_slidingWindowAXIBRAM;
             if (m_axis_tdata[2][2] !== expected_masked)
                 $display("MISMATCH [2][2] at time %0t: expected %0d, got %0d", $time, expected_masked, m_axis_tdata[2][2]);
         end
+        
+
     end
 endmodule

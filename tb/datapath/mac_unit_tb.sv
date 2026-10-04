@@ -55,4 +55,6 @@ module mac_unit_tb;
     else $display(">>> %0d TEST(S) FAILED", errors);
     $finish;
   end
+
 endmodule
+
