@@ -48,7 +48,7 @@ cnn_fpga/       Training and weight extraction (PyTorch)
 |---|---|
 | 1 | Datapath and arithmetic: MAC, adder tree, quantization, ReLU, pooling |
 | 2 | Dataflow and memory: line buffers, 3×3 sliding window, padding ([details](rtl/README_member2.md)) |
-| 3 | SoC integration: CPU, interconnect, peripherals, firmware, timing |
+| 3 | SoC integration: CPU, interconnect, peripherals, firmware, timing ([details](rtl/README_member3.md)) |
 
 ## Status
 
