@@ -1,94 +1,145 @@
-`timescale 1ns / 1ps
+// Reads one image from the shared memory and streams it to the sliding window one pixel per clock.
 
-module pixel_stream_reader (
-    input  logic clk,
-    input  logic resetn,
+// A one cycle 'start' pulse reads img_base and img_len. (Ignored during busy is high)
+// Pixels are read from img_base, img_base + 1, .... and so on.
+// First pixel of an image is marked with m_axis_tuser = 1
+// After image, DRAIN zero-valued pixels are sent to flush the last windows out of sliding window (DRAIN = 2 for PADDING = 0)
+// Busy is high until the very last pixel (including DRAIN) has been sent.
 
-    input  logic        start,
-    input  logic [31:0] img_base,
-    input  logic [31:0] img_len,
-    output logic        done,
-    output logic        busy,
+// Memory has 1-cycle latency for reading, hence every pixel is considered as a request with three flags (valid, first, zero). 
+// Flags will be registered once to make sure they leave the module in the same cycle as the memory data
 
-    output logic [13:0] bram_addr,
-    input  logic [31:0] bram_rdata,
+// img_len >= 1
+// No backpressure support as of now
 
-    output logic [ 7:0] m_axis_tdata,
-    output logic        m_axis_tvalid,
-    output logic        m_axis_tuser,
-    input  logic        m_axis_tready
+
+module pixel_stream_reader #(
+    parameter int DATA_WIDTH = 8,
+    parameter int ADDR_W = 11, // Byte address width of image memory
+    parameter int DRAIN = 2 // Flush pixels 
+) (
+    input logic clk,
+    input logic rstn,
+
+    // Control from CPU registers   
+    input logic start, // 1 cycle pulse indicating start of a read
+    input logic [ADDR_W-1:0] img_base, // Byte address of first pixel
+    input logic [ADDR_W-1:0] img_len, // Total number of pixels
+    output logic busy, // Kept high until last pixel
+
+    // Image memory read port with 1 cycle latency
+    output logic [ADDR_W-1:0] mem_raddr, // Sent to memory (BRAM)
+    input logic [DATA_WIDTH-1:0] mem_rdata, // Received from (BRAM)
+
+    // AXI Stream master 
+    output logic [DATA_WIDTH-1:0] m_axis_tdata, // Sent to sliding window
+    output logic m_axis_tvalid,
+    output logic m_axis_tuser, // Indicate first pixel of an image
+    input logic m_axis_tready 
 );
+    logic [ADDR_W-1:0] addr; // Address requested current cycle
+    logic [ADDR_W-1:0] count; // Number of issued requests in current state
+    logic [ADDR_W-1:0] len_q; // Image length 
 
-    typedef enum logic [1:0] { IDLE, READ_REQ, READ_WAIT, STREAM } state_t;
-    state_t state, next_state;
+    assign mem_raddr = addr;
 
-    logic [31:0] count;
-    logic [1:0]  byte_idx;
-    logic [31:0] current_word;
+    typedef enum logic [1:0] {
+        S_IDLE = 2'b00, // Waiting for 1 cycle 'start' pulse
+        S_READ = 2'b01, // One real pixel request every cycle
+        S_DRAIN = 2'b10 // DRAIN zero-pixel requests per image
+    } state_t;
 
-    assign busy = (state != IDLE);
-    assign done = (state == IDLE) && (count == img_len) && (img_len > 0);
+    state_t current_state;
 
-    always_comb begin
-        case (byte_idx)
-            2'b00: m_axis_tdata = current_word[7:0];
-            2'b01: m_axis_tdata = current_word[15:8];
-            2'b10: m_axis_tdata = current_word[23:16];
-            2'b11: m_axis_tdata = current_word[31:24];
-        endcase
-    end
-
-    always_ff @(posedge clk or negedge resetn) begin
-        if (!resetn) begin
-            state <= IDLE;
-            count <= 0;
-            bram_addr <= 0;
-            byte_idx <= 0;
-            m_axis_tvalid <= 0;
-            m_axis_tuser <= 0;
-            current_word <= 0;
+    always_ff @(posedge clk or negedge rstn) begin
+        if (!rstn) begin
+            current_state <= S_IDLE;
+            addr <= '0;
+            count <= '0;
+            len_q <= '0;
         end else begin
-            case (state)
-                IDLE: begin
-                    m_axis_tvalid <= 0;
+            case (current_state) 
+                // Latches the image location and size
+                // Start pulse is only accepted here, and it is ignored during a run
+                S_IDLE: begin
                     if (start) begin
-                        state <= READ_REQ;
-                        count <= 0;
-                        bram_addr <= img_base[15:2];
-                        byte_idx <= img_base[1:0];
+                        addr <= img_base;
+                        len_q <= img_len;
+                        count <= '0;
+                        current_state <= S_READ;
                     end
                 end
 
-                READ_REQ: begin
-                    state <= READ_WAIT;
-                end
-
-                READ_WAIT: begin
-                    current_word <= bram_rdata;
-                    m_axis_tvalid <= 1;
-                    m_axis_tuser <= (count == 0);
-                    state <= STREAM;
-                end
-
-                STREAM: begin
-                    if (m_axis_tready) begin
+                // Requests pixels (img_base , img_base + 1, ..., img_base + len - 1) per cycle
+                S_READ: begin
+                    if (count == len_q - 1) begin // Last pixel
+                        count <= '0;
+                        current_state <= S_DRAIN;
+                    end else begin
+                        addr <= addr + 1;
                         count <= count + 1;
-                        if (count + 1 == img_len) begin
-                            state <= IDLE;
-                            m_axis_tvalid <= 0;
-                        end else if (byte_idx == 2'b11) begin
-                            byte_idx <= 0;
-                            bram_addr <= bram_addr + 1;
-                            state <= READ_REQ;
-                            m_axis_tvalid <= 0;
-                        end else begin
-                            byte_idx <= byte_idx + 1;
-                            m_axis_tuser <= 1'b0;
-                        end
                     end
                 end
+
+                // Issues zero-pixels for DRAIN requests
+                S_DRAIN: begin
+                    if (count == DRAIN - 1) begin
+                        count <= '0;
+                        current_state <= S_IDLE;
+                    end else begin
+                        count <= count + 1;
+                    end
+                end
+                
+                default: current_state <= S_IDLE;
+
             endcase
         end
     end
 
+    // Flags
+    logic req_valid; // A pixel is requested (real or DRAIN)
+    logic req_first; // First pixel
+    logic req_zero; // DRAIN zero-pixel
+
+    always_comb begin
+        req_valid = ((current_state == S_READ) || (current_state == S_DRAIN));
+        req_first = ((current_state == S_READ) && count == 0);
+        req_zero = (current_state == S_DRAIN);
+
+    end
+
+    // Flags delayed via registers to line up with memory's 1 cycle read latency
+    logic valid_q;
+    logic first_q;
+    logic zero_q;
+
+    always_ff @(posedge clk or negedge rstn) begin
+        if (!rstn) begin
+            valid_q <= 0;
+            first_q <= 0;
+            zero_q <= 0;
+        end else begin
+            valid_q <= req_valid;
+            first_q <= req_first;
+            zero_q <= req_zero;
+        end
+    end
+
+    assign m_axis_tvalid = valid_q;
+    assign m_axis_tuser = first_q;
+    assign m_axis_tdata = zero_q ? '0 : mem_rdata; // DRAIN pixels are zero
+
+    // Busy until state is IDLE and last pixel left the module
+    assign busy = ((current_state != S_IDLE) || valid_q); 
+
+    // synthesis translate_off
+    always @(posedge clk) begin
+        if (rstn && m_axis_tvalid) begin
+            assert(m_axis_tready)
+            else $error("Reader doesn't support backpressure.");
+        end
+    end 
+    // synthesis translate_on
+    
 endmodule

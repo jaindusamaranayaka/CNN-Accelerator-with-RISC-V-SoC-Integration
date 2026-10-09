@@ -1,188 +1,131 @@
-`timescale 1 ns / 1 ps
-// =============================================================================
-// Testbench: tb_pixel_stream_reader
-// DUT:       pixel_stream_reader.sv
-// Tests:
-//   [F] Functional  - streams correct bytes from BRAM words
-//   [I] Interface   - AXI-S tuser on first pixel, tvalid/tready handshake
-//   [T] Timing      - busy/done flags, state transitions
-//   [P] Protocol    - tvalid held until tready, no data lost on backpressure
-//   [C] Corner-case - img_len=1, img_len=4 (one word), back-to-back start
-// =============================================================================
 module tb_pixel_stream_reader;
 
-    logic clk    = 0;
-    logic resetn = 0;
-    always #10 clk = ~clk;
+    localparam int DATA_WIDTH = 8;
+    localparam int ADDR_W = 11;
+    localparam int DRAIN = 2;
+    localparam int MEM_BYTES = 2048;
 
-    logic        start;
-    logic [31:0] img_base;
-    logic [31:0] img_len;
-    logic        done;
-    logic        busy;
-    logic [13:0] bram_addr;
-    logic [31:0] bram_rdata;
-    logic [ 7:0] m_axis_tdata;
-    logic        m_axis_tvalid;
-    logic        m_axis_tuser;
-    logic        m_axis_tready;
+    logic clk;
+    logic rstn;
+    logic start;
+    logic [ADDR_W-1:0] img_base;
+    logic [ADDR_W-1:0] img_len;
+    logic busy;
+    logic [ADDR_W-1:0] mem_raddr;
+    logic [DATA_WIDTH-1:0] mem_rdata;
+    logic [DATA_WIDTH-1:0] m_axis_tdata;
+    logic m_axis_tvalid;
+    logic m_axis_tuser;
+    logic m_axis_tready;
 
-    pixel_stream_reader dut (
-        .clk          (clk),
-        .resetn       (resetn),
-        .start        (start),
-        .img_base     (img_base),
-        .img_len      (img_len),
-        .done         (done),
-        .busy         (busy),
-        .bram_addr    (bram_addr),
-        .bram_rdata   (bram_rdata),
-        .m_axis_tdata (m_axis_tdata),
-        .m_axis_tvalid(m_axis_tvalid),
-        .m_axis_tuser (m_axis_tuser),
-        .m_axis_tready(m_axis_tready)
-    );
-
-    // Fake BRAM with small content
-    logic [31:0] fake_mem [0:15];
-    always_ff @(posedge clk)
-        bram_rdata <= fake_mem[bram_addr[3:0]];
-
-    int pass_count = 0;
-    int fail_count = 0;
-
-    task check(input string name, input logic [31:0] got, input logic [31:0] exp);
-        if (got === exp) begin
-            $display("  PASS  [%0s]  got=%0h  exp=%0h", name, got, exp);
-            pass_count++;
-        end else begin
-            $display("  FAIL  [%0s]  got=%0h  exp=%0h  <---", name, got, exp);
-            fail_count++;
-        end
-    endtask
-
-    // Collect all bytes streamed out
-    logic [7:0] received_bytes [0:255];
-    logic [7:0] received_user  [0:255];
-    int         rx_count;
-
-    logic rx_count_clr;
-
-    // Monitor on tvalid & tready
-    always_ff @(posedge clk) begin
-        if (rx_count_clr) begin
-            rx_count <= 0;
-        end else if (m_axis_tvalid && m_axis_tready) begin
-            received_bytes[rx_count] <= m_axis_tdata;
-            received_user [rx_count] <= m_axis_tuser;
-            rx_count <= rx_count + 1;
-        end
-    end
-
-    task automatic run_stream(input int num_bytes, input logic stall_en);
-        int tready_cycle;
-        tready_cycle = 0;
-        @(negedge clk);
-        start = 1;
-        @(posedge clk);
-        @(negedge clk);
-        start = 0;
-        // Keep driving tready and wait for done
-        while (!done) begin
-            @(negedge clk);
-            if (stall_en)
-                m_axis_tready = tready_cycle[0];
-            else
-                m_axis_tready = 1;
-            tready_cycle++;
-        end
-        @(negedge clk);
-        m_axis_tready = 0;
-        repeat(3) @(posedge clk);
-    endtask
+    pixel_stream_reader #(
+        .DATA_WIDTH(DATA_WIDTH),
+        .ADDR_W(ADDR_W),
+        .DRAIN(DRAIN)
+    ) dut (.*);
 
     initial begin
-        // Populate fake BRAM
-        //   word[0] = 0xAABBCCDD -> bytes: DD CC BB AA
-        //   word[1] = 0x11223344 -> bytes: 44 33 22 11
-        fake_mem[0] = 32'hAABBCCDD;
-        fake_mem[1] = 32'h11223344;
-        for (int i = 2; i < 16; i++) fake_mem[i] = 32'hDEAD_0000 + i;
-
-        start = 0; img_base = 0; img_len = 0; m_axis_tready = 0;
-        rx_count_clr = 1;
-
-        resetn = 0;
-        repeat(4) @(posedge clk);
-        resetn = 1;
-        @(posedge clk);
-        rx_count_clr = 0;
-
-        $display("\n==== [F] FUNCTIONAL - BYTE STREAM ORDER ====");
-        img_base = 32'h0; img_len = 32'd8; 
-        @(negedge clk); rx_count_clr = 1; @(posedge clk); rx_count_clr = 0;
-        run_stream(8, 0);
-        // Expected: DD CC BB AA  44 33 22 11
-        check("F1 byte0", {24'b0, received_bytes[0]}, {24'b0, 8'hDD});
-        check("F1 byte1", {24'b0, received_bytes[1]}, {24'b0, 8'hCC});
-        check("F1 byte2", {24'b0, received_bytes[2]}, {24'b0, 8'hBB});
-        check("F1 byte3", {24'b0, received_bytes[3]}, {24'b0, 8'hAA});
-        check("F1 byte4", {24'b0, received_bytes[4]}, {24'b0, 8'h44});
-        check("F1 byte5", {24'b0, received_bytes[5]}, {24'b0, 8'h33});
-        check("F1 total", {24'b0, rx_count[7:0]}, {24'b0, 8'd8});
-
-        $display("\n==== [I] INTERFACE - TUSER ON FIRST PIXEL ====");
-        img_base = 32'h0; img_len = 32'd4;
-        @(negedge clk); rx_count_clr = 1; @(posedge clk); rx_count_clr = 0;
-        run_stream(4, 0);
-        check("I1 tuser on first byte",  {31'b0, received_user[0]}, 32'h1);
-        check("I1 tuser on second byte", {31'b0, received_user[1]}, 32'h0);
-        check("I1 tuser on third byte",  {31'b0, received_user[2]}, 32'h0);
-
-        $display("\n==== [T] TIMING - BUSY/DONE FLAGS ====");
-        img_base = 32'h0; img_len = 32'd4;
-        @(negedge clk); rx_count_clr = 1; @(posedge clk); rx_count_clr = 0;
-        @(negedge clk); start = 1;
-        @(posedge clk);
-        @(negedge clk); start = 0;
-        check("T1 busy after start", {31'b0, busy}, 32'h1);
-        m_axis_tready = 1;
-        wait (done == 1);
-        check("T2 done when finished", {31'b0, done}, 32'h1);
-        @(posedge clk);
-        check("T3 not busy when done", {31'b0, busy}, 32'h0);
-        m_axis_tready = 0;
-        @(posedge clk);
-
-        $display("\n==== [P] PROTOCOL - BACKPRESSURE ====");
-        img_base = 32'h0; img_len = 32'd8;
-        @(negedge clk); rx_count_clr = 1; @(posedge clk); rx_count_clr = 0;
-        run_stream(8, 1); // stall every other cycle
-        check("P1 all bytes received despite stall", {24'b0, rx_count[7:0]}, {24'b0, 8'd8});
-        check("P1 first byte still correct", {24'b0, received_bytes[0]}, {24'b0, 8'hDD});
-
-        $display("\n==== [C] CORNER-CASE ====");
-
-        // [C1] img_len = 1 (single byte)
-        img_base = 32'h0; img_len = 32'd1;
-        @(negedge clk); rx_count_clr = 1; @(posedge clk); rx_count_clr = 0;
-        run_stream(1, 0);
-        check("C1 single byte count", {24'b0, rx_count[7:0]}, {24'b0, 8'd1});
-        check("C1 single byte tuser", {31'b0, received_user[0]}, 32'h1);
-
-        // [C2] img_len = 4 (exactly one BRAM word)
-        img_base = 32'h0; img_len = 32'd4;
-        @(negedge clk); rx_count_clr = 1; @(posedge clk); rx_count_clr = 0;
-        run_stream(4, 0);
-        check("C2 one-word count", {24'b0, rx_count[7:0]}, {24'b0, 8'd4});
-        check("C2 one-word count", {24'b0, rx_count[7:0]}, {24'b0, 8'd4});
-
-        $display("\n========================================");
-        $display("  TOTAL PASS: %0d  |  TOTAL FAIL: %0d", pass_count, fail_count);
-        $display("========================================\n");
-        $finish;
+        clk = 0;
+        forever #5 clk = ~clk;
     end
 
-    initial begin #2000000; $display("TIMEOUT"); $finish; end
+    logic [DATA_WIDTH-1:0] mem_model [0:MEM_BYTES-1];
 
+    initial begin
+        for (int i = 0; i < MEM_BYTES; i++) begin
+            mem_model[i] = $urandom();
+        end
+    end
+
+    always @(posedge clk) begin
+            mem_rdata <= mem_model[mem_raddr];
+    end
+
+    int exp_base, exp_len; // Base and Length of the run being checked
+    int k; // Position of current pixel
+    int out_count; // Number of pixels that came out 
+    int errors = 0; // Total error
+
+    initial begin
+        rstn = 0;
+        start = 0;
+        img_base = 0;
+        img_len = 0;
+        m_axis_tready = 1;
+        repeat (2) @(negedge clk);
+        rstn = 1;
+        run_image(0,5);
+        run_image(1024,784);
+        @(negedge clk);
+        exp_base = 0;
+        exp_len = 784;
+        img_base = 0;
+        img_len = 784;
+        start = 1;
+        @(negedge clk);
+        start = 0;
+        repeat(100) @(negedge clk);
+        img_base = 1024;
+        start = 1;
+        @(negedge clk);
+        start = 0;
+        wait(busy == 0);
+        if (out_count != 786) begin
+            errors++;
+            $display("Final test is wrong!, out count = %0d", out_count);
+        end
+
+        $display("Errors = %0d", errors);
+        $finish();
+    end
+    always @(posedge clk) begin
+            if (rstn && m_axis_tvalid) begin
+                if (m_axis_tuser) begin
+                    k = 0;
+                    out_count = 0;
+                end
+                if ((k == 0) && (m_axis_tuser == 0)) begin
+                    errors++;
+                    $display("k = %0d, m_axis_tuser = %0h", k, m_axis_tuser);
+                end
+                if (k < exp_len) begin
+                    if (m_axis_tdata != mem_model[exp_base + k]) begin
+                        errors++;
+                        $display("Memory model doesn't match the actual output, m_axis_tdata = %0h, mem_model = %0h", m_axis_tdata, mem_model[exp_base + k]);
+                    end
+                end else begin
+                    if (m_axis_tdata != 0) begin
+                        errors++;
+                        $display("Drain pixel doesn't match with the model, k = %0d, m_axis_tdata = %0h", k, m_axis_tdata);
+                    end
+                end
+
+                if (k > 0 && m_axis_tuser == 1) begin
+                    errors++;
+                    $display("K is greater than zero but tusre is 1, k = %0d, m_axis_tuser = %0d", k, m_axis_tuser);
+                end
+                k++;
+                out_count++;
+            end
+    end
+
+    task automatic run_image(input int base,input int len);
+        exp_base = base;
+        exp_len = len;
+        @(negedge clk);
+        img_base = base;
+        img_len = len;
+        start = 1;
+        @(negedge clk);
+        start = 0;
+        wait (busy == 0);
+        
+        if (out_count != (len + DRAIN)) begin
+            errors++;
+            $display("Out count is wrong, out_count = %0d, len = %0d, DRAIN = 2",out_count, len);
+        end
+
+        repeat(3) @(posedge clk);
+
+    endtask
 endmodule

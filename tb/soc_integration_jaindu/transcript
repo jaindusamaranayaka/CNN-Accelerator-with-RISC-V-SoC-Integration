@@ -1,5 +1,5 @@
 # vsim -c -do "run -all; quit -f" tb_uart_serial_controller 
-# Start time: 19:22:21 on Oct 09,2026
+# Start time: 19:34:16 on Oct 09,2026
 # Loading sv_std.std
 # Loading work.tb_uart_serial_controller
 # Loading work.uart_serial_controller
@@ -34,5 +34,5 @@
 # 
 # ** Note: $finish    : tb_uart_serial_controller.sv(187)
 #    Time: 33750 ns  Iteration: 1  Instance: /tb_uart_serial_controller
-# End time: 19:22:22 on Oct 09,2026, Elapsed time: 0:00:01
+# End time: 19:34:16 on Oct 09,2026, Elapsed time: 0:00:00
 # Errors: 0, Warnings: 0

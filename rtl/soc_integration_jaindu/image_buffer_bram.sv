@@ -1,31 +1,54 @@
-`timescale 1ns / 1ps
-
 module image_buffer_bram #(
-    parameter int DEPTH = 1024
-)(
-    input  logic clk,
-    input  logic [31:0] a_addr,
-    input  logic [31:0] a_wdata,
-    input  logic [ 3:0] a_wstrb,
-    input  logic        a_en,
-    output logic [31:0] a_rdata,
-
-    input  logic [13:0] b_addr,
-    output logic [31:0] b_rdata
+    parameter int DEPTH_WORDS = 512,
+    localparam int WADDR_W = $clog2(DEPTH_WORDS) ,// Word address width
+    localparam int BADDR_W = $clog2(DEPTH_WORDS) + 2 // Byte address width
+) (
+    input logic clk,
+    input logic a_we,
+    input logic [WADDR_W-1:0] a_waddr,
+    input logic [31:0] a_wdata,
+    input logic [3:0] a_wstrb,
+    input logic [BADDR_W-1:0] b_raddr,
+    output logic [7:0] b_rdata
 );
-    logic [31:0] mem [0:DEPTH-1];
+    // Same Clock for both reading and writing, CPU writes the image before starting the accelerator, so the ports
+    // never touch the same address in the same cycle.
+
+    // Little Endian addressing
+    
+
+    // 4 Banks
+    genvar k;
+    generate 
+        for (k = 0; k < 4; k++) begin : banks
+            (* ramstyle = "M9K" *) logic [7:0] mem_arr [0:DEPTH_WORDS-1]; // To instantiate M9K blocks in FPGA
+            logic [7:0] read_reg;
+
+            always_ff @(posedge clk) begin
+                if (a_we && a_wstrb[k]) begin
+                    mem_arr[a_waddr] <= a_wdata[8*k +: 8]; 
+                end
+                read_reg <= mem_arr[b_raddr[BADDR_W-1:2]];
+            end
+        end
+    endgenerate
+
+    // Delayed Bank Select
+    logic [1:0] bsel_q;
 
     always_ff @(posedge clk) begin
-        if (a_en) begin
-            if (a_wstrb[0]) mem[a_addr[13:2]][ 7: 0] <= a_wdata[ 7: 0];
-            if (a_wstrb[1]) mem[a_addr[13:2]][15: 8] <= a_wdata[15: 8];
-            if (a_wstrb[2]) mem[a_addr[13:2]][23:16] <= a_wdata[23:16];
-            if (a_wstrb[3]) mem[a_addr[13:2]][31:24] <= a_wdata[31:24];
-            a_rdata <= mem[a_addr[13:2]];
-        end
+        bsel_q <= b_raddr[1:0];
     end
 
-    always_ff @(posedge clk) begin
-        b_rdata <= mem[b_addr];
+    // Output Selector
+    always_comb begin
+        case (bsel_q)
+            2'b00  : b_rdata = banks[0].read_reg;
+            2'b01  : b_rdata = banks[1].read_reg;
+            2'b10  : b_rdata = banks[2].read_reg;
+            2'b11  : b_rdata = banks[3].read_reg;
+            default: b_rdata = banks[0].read_reg;
+        endcase
+
     end
 endmodule

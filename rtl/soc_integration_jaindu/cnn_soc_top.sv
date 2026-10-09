@@ -122,8 +122,8 @@ module cnn_soc_top (
         .ready    (gpio_ready),
         .gpio_out (gpio_out)
     );
-    logic [13:0] bram_addr;
-    logic [31:0] bram_rdata;
+    logic [11:0] bram_addr;
+    logic [ 7:0] bram_rdata;
     logic [31:0] img_base;
     logic [31:0] img_len;
     logic        re_start;
@@ -131,15 +131,14 @@ module cnn_soc_top (
     logic        re_busy;
 
     image_buffer_bram #(
-        .DEPTH(1024)
+        .DEPTH_WORDS(1024)
     ) img_bram (
         .clk(clk),
-        .a_addr(mem_addr),
+        .a_we(img_bram_valid && (|mem_wstrb)),
+        .a_waddr(mem_addr[11:2]),
         .a_wdata(mem_wdata),
         .a_wstrb(mem_wstrb),
-        .a_en(img_bram_valid && (|mem_wstrb)),
-        .a_rdata(),
-        .b_addr(bram_addr),
+        .b_raddr(bram_addr),
         .b_rdata(bram_rdata)
     );
     assign img_bram_rdata = 32'h0;
@@ -149,16 +148,17 @@ module cnn_soc_top (
     logic       pixel_axis_tvalid;
     logic       pixel_axis_tready;
 
-    pixel_stream_reader re (
+    pixel_stream_reader #(
+        .ADDR_W(12)
+    ) re (
         .clk(clk),
-        .resetn(resetn),
+        .rstn(resetn),
         .start(re_start),
-        .img_base(img_base),
-        .img_len(img_len),
-        .done(re_done),
+        .img_base(img_base[11:0]),
+        .img_len(img_len[11:0]),
         .busy(re_busy),
-        .bram_addr(bram_addr),
-        .bram_rdata(bram_rdata),
+        .mem_raddr(bram_addr),
+        .mem_rdata(bram_rdata),
         .m_axis_tdata(pixel_axis_tdata),
         .m_axis_tvalid(pixel_axis_tvalid),
         .m_axis_tuser(pixel_axis_tuser),
