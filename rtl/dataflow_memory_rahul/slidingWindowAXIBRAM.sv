@@ -154,25 +154,37 @@ module slidingWindowAXIBRAM
         end
     end
 
-    int center_index;
     logic [$clog2(ROW_LENGTH)-1:0] center_row, center_col;
     logic right_ok, left_ok, top_ok, bottom_ok;
-    always_comb begin
-        center_index = pixel_count - (ROW_LENGTH + 4);
-        if (center_index >= 0) begin
-            center_row = center_index / ROW_LENGTH;
-            center_col = center_index % ROW_LENGTH;
-        end else begin
-            center_row = '0;
-            center_col = '0;
+    
+
+    
+    always_ff @(posedge clk or negedge rstn) begin
+        if (!rstn) begin
+            center_row <= '0;
+            center_col <= '0;
+        end else if (en) begin
+            if (s_axis_tuser) begin
+                center_row <= '0;
+                center_col <= '0;
+            end else if (pixel_count == (ROW_LENGTH + 3)) begin
+                center_row <= '0;
+                center_col <= '0;
+            end else if (window_valid) begin
+                if (center_col == ROW_LENGTH - 1) begin
+                    center_col <= '0;
+                    center_row <= center_row + 1'b1;
+                end else begin
+                    center_col <= center_col + 1'b1;
+                end
+            end
         end
     end
 
-
-    assign right_ok = (center_col <= ROW_LENGTH - 2);
-    assign left_ok  = (center_col >= 1);
-    assign top_ok   = (center_row >= 1);
-    assign bottom_ok = (center_row <= ROW_LENGTH - 2);
+    assign right_ok = (center_col <= ROW_LENGTH - 2);  
+    assign left_ok  = (center_col >= 1);            
+    assign top_ok   = (center_row >= 1);     
+    assign bottom_ok = (center_row <= ROW_LENGTH - 2);      
     assign interior = (top_ok && bottom_ok && left_ok && right_ok);
     always_comb begin
         m_axis_tdata[0][0] = (top_ok && left_ok)  ? reg_row_3[2] : '0;
