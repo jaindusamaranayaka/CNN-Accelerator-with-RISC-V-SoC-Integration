@@ -11,7 +11,7 @@ vmap work work
 $tests = @(
     @{ name = "tb_display_gpio_peripheral"; src = "../../rtl/soc_integration_jaindu/display_gpio_peripheral.sv" },
     @{ name = "tb_soc_bus_interconnect";    src = "../../rtl/soc_integration_jaindu/soc_bus_interconnect.sv" },
-    @{ name = "tb_image_buffer_bram";       src = "../../rtl/soc_integration_jaindu/image_buffer_bram.sv" },
+    @{ name = "tb_image_buffer_bram";       src = "../../rtl/dataflow_memory_rahul/image_buffer_bram.sv" },
     @{ name = "tb_pixel_stream_reader";     src = "../../rtl/soc_integration_jaindu/pixel_stream_reader.sv" },
     @{ name = "tb_uart_serial_controller";  src = "../../rtl/soc_integration_jaindu/uart_serial_controller.sv" }
 )
