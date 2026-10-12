@@ -1,4 +1,4 @@
-module tb_pixel_stream_reader;
+module tb_image_reader;
 
     localparam int DATA_WIDTH = 8;
     localparam int ADDR_W = 11;
@@ -18,7 +18,7 @@ module tb_pixel_stream_reader;
     logic m_axis_tuser;
     logic m_axis_tready;
 
-    pixel_stream_reader #(
+    image_reader #(
         .DATA_WIDTH(DATA_WIDTH),
         .ADDR_W(ADDR_W),
         .DRAIN(DRAIN)

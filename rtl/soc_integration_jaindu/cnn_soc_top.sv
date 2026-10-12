@@ -130,7 +130,7 @@ module cnn_soc_top (
     logic        re_done;
     logic        re_busy;
 
-    image_buffer_bram #(
+    image_bram_dp #(
         .DEPTH_WORDS(1024)
     ) img_bram (
         .clk(clk),
@@ -148,7 +148,7 @@ module cnn_soc_top (
     logic       pixel_axis_tvalid;
     logic       pixel_axis_tready;
 
-    pixel_stream_reader #(
+    image_reader #(
         .ADDR_W(12)
     ) re (
         .clk(clk),

@@ -1,4 +1,4 @@
-module tb_image_buffer_bram;
+module tb_image_bram_dp;
     localparam int DEPTH_WORDS = 512;
     localparam int WADDR_W = $clog2(DEPTH_WORDS);
     localparam int BADDR_W = $clog2(DEPTH_WORDS) + 2;
@@ -13,7 +13,7 @@ module tb_image_buffer_bram;
 
     localparam int NUM_BYTES = DEPTH_WORDS * 4;
 
-    image_buffer_bram #(
+    image_bram_dp #(
         .DEPTH_WORDS(DEPTH_WORDS)
     ) dut (
         .clk(clk),

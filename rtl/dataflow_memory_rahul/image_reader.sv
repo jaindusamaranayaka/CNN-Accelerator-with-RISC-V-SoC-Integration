@@ -13,7 +13,7 @@
 // No backpressure support as of now
 
 
-module pixel_stream_reader #(
+module image_reader #(
     parameter int DATA_WIDTH = 8,
     parameter int ADDR_W = 11, // Byte address width of image memory
     parameter int DRAIN = 2 // Flush pixels 
