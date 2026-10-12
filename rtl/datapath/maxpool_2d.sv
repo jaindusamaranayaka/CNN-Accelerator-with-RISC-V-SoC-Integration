@@ -1,5 +1,5 @@
-// maxpool.sv
-module maxpool #(
+// maxpool_2d.sv
+module maxpool_2d #(
     parameter int DATA_WIDTH  = 8,
     parameter int IMAGE_WIDTH = 26
 )(
