@@ -13,9 +13,9 @@ module relu_tb;
 
     int errors = 0;
 
-    always
+    always #(CLK_PERIOD/2) clk = ~clk;
 
-    relu_activation
+    relu_activation #(
         .DATA_WIDTH(DATA_WIDTH)
     ) dut (
         .clk(clk),
@@ -55,15 +55,21 @@ module relu_tb;
         rst_n    = 0;
         valid_in = 0;
         data_in  = '0;
+        #(CLK_PERIOD*2) rst_n = 1;
 
+        // positive passthrough
         relu(8'sd42, 8'sd42);
 
+        // negative -> clamped to zero
         relu(-8'sd15, 8'sd0);
 
+        // zero boundary -> passes through as zero, not treated as negative
         relu(8'sd0, 8'sd0);
 
+        // most negative possible value -> zero
         relu(-8'sd128, 8'sd0);
 
+        // max positive value -> unchanged
         relu(8'sd127, 8'sd127);
 
         if (errors == 0)

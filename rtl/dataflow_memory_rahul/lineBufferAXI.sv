@@ -1,6 +1,6 @@
 `timescale 1ns / 1ps
 
-module lineBufferAXI
+module lineBufferAXI #(
     parameter int DATA_WIDTH = 8,
     parameter int ROW_LENGTH = 8
 )(

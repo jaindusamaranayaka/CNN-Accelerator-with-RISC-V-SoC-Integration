@@ -204,13 +204,13 @@ module cnn_soc_top (
             if (mac_ctrl_valid && mem_wstrb != 4'b0000) begin
                 case (mem_addr[7:0])
                     8'h00: re_start           <= mem_wdata[0] && !re_busy;
-                    8'h04: img_base           <= mem_wdata;
-                    8'h08: img_len            <= mem_wdata;
-                    8'h0C: dp_weights[31:0]   <= mem_wdata;
-                    8'h10: dp_weights[63:32]  <= mem_wdata;
-                    8'h14: dp_weights[71:64]  <= mem_wdata[7:0];
-                    8'h18: dp_bias            <= mem_wdata[15:0];
-                    8'h1C: dp_shift_s         <= mem_wdata[4:0];
+                    8'h04: dp_weights[31:0]   <= mem_wdata;
+                    8'h08: dp_weights[63:32]  <= mem_wdata;
+                    8'h0C: dp_weights[71:64]  <= mem_wdata[7:0];
+                    8'h10: dp_bias            <= mem_wdata[15:0];
+                    8'h14: dp_shift_s         <= mem_wdata[4:0];
+                    8'h18: img_base           <= mem_wdata;
+                    8'h1C: img_len            <= mem_wdata;
                     default: ;
                 endcase
             end
@@ -291,8 +291,13 @@ module cnn_soc_top (
             if (mac_ctrl_valid && !mac_ctrl_ready && mem_wstrb == 4'b0000) begin
                 case (mem_addr[7:0])
                     8'h00: mac_ctrl_rdata <= {30'h0, result_ready, re_busy};
-                    8'h04: mac_ctrl_rdata <= img_base;
-                    8'h08: mac_ctrl_rdata <= img_len;
+                    8'h04: mac_ctrl_rdata <= dp_weights[31:0];
+                    8'h08: mac_ctrl_rdata <= dp_weights[63:32];
+                    8'h0C: mac_ctrl_rdata <= {24'h0, dp_weights[71:64]};
+                    8'h10: mac_ctrl_rdata <= {16'h0, dp_bias};
+                    8'h14: mac_ctrl_rdata <= {27'h0, dp_shift_s};
+                    8'h18: mac_ctrl_rdata <= img_base;
+                    8'h1C: mac_ctrl_rdata <= img_len;
                     default: mac_ctrl_rdata <= 32'h0;
                 endcase
             end else begin

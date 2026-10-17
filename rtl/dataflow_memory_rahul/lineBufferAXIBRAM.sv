@@ -1,6 +1,6 @@
 `timescale 1ns / 1ps
 
-module lineBufferAXIBRAM
+module lineBufferAXIBRAM #(
     parameter int DATA_WIDTH = 8,
     parameter int ROW_LENGTH = 8
 )(
@@ -21,11 +21,11 @@ module lineBufferAXIBRAM
             if (wr_en) begin
                 if(ptr == ROW_LENGTH - 1) begin
                     ptr <= '0;
-                end else begin
+                end else begin 
                     ptr <= ptr + 1;
                 end
             end
-        end
+        end    
     end
 
 

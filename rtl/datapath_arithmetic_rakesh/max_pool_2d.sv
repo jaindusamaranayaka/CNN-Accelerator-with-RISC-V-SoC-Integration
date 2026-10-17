@@ -1,6 +1,6 @@
 `timescale 1 ns / 1 ps
 
-module max_pool_2d
+module max_pool_2d #(
     parameter WIDTH = 26,
     parameter DATA_WIDTH = 8
 )(

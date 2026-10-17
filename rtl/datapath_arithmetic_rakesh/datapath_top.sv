@@ -1,4 +1,4 @@
-module datapath_top
+module datapath_top #(
     parameter DATA_WIDTH = 8,
     parameter PROD_WIDTH = 16,
     parameter SHIFT_WIDTH = 5,
@@ -14,6 +14,7 @@ module datapath_top
     output logic signed [DATA_WIDTH-1:0]    relu_out,
     output logic                            valid_out
 );
+// internal wires between stages
 logic [PROD_WIDTH*NUM_TAPS-1:0]  products;
 logic signed [PROD_WIDTH+3:0]           sum;
 logic signed [DATA_WIDTH-1:0] s_scaled;

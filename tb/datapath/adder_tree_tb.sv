@@ -17,7 +17,7 @@ module adder_tree_tb;
 
     int errors = 0;
 
-    adder_tree
+    adder_tree #(
         .PROD_WIDTH (PROD_WIDTH),
         .DATA_WIDTH (DATA_WIDTH),
         .NUM_TAPS   (NUM_TAPS)
@@ -31,7 +31,7 @@ module adder_tree_tb;
         .sum       (sum)
     );
 
-    always
+    always #(CLK_PERIOD/2) clk = ~clk;
 
     task automatic run_case(
         input string                          name,
@@ -50,7 +50,7 @@ module adder_tree_tb;
         bias     = '0;
 
         wait (valid_out === 1'b1);
-        @(negedge clk);
+        @(negedge clk); // sample after the edge that updates sum, avoid race
 
         if (sum !== expected_sum) begin
             $error("[%s] MISMATCH: expected %0d, got %0d", name, expected_sum, sum);
@@ -59,6 +59,7 @@ module adder_tree_tb;
             $display("[%s] OK: sum = %0d", name, sum);
         end
 
+        // let valid_out fall back to 0 before starting the next case
         wait (valid_out === 1'b0);
     endtask
 
@@ -67,13 +68,22 @@ module adder_tree_tb;
         valid_in = 0;
         products = '0;
         bias     = '0;
+        #(CLK_PERIOD*2) rst_n = 1;
 
+        // Case 1: original worked example
+        // M0..M8 = {10, 0, -30, 10, 0, 50, -10, 0, -40}, bias = 5
+        // L1: sum01=10, sum23=-20, sum45=50, sum67=-10, m8=-40
+        // L2: sum0123=-10, sum4567=40
+        // L3: -10 + 40 + -40 + 5 = -5
         run_case("case1_worked_example",
             {-16'sd40, 16'sd0, -16'sd10, 16'sd50, 16'sd0, 16'sd10, -16'sd30, 16'sd0, 16'sd10},
             16'sd5,
             -20'sd5
         );
 
+        // Case 2: same products, large negative bias
+        // raw sum before bias = -10 + 40 + -40 = -10
+        // -10 + (-300) = -310
         run_case("case2_negative_bias",
             {-16'sd40, 16'sd0, -16'sd10, 16'sd50, 16'sd0, 16'sd10, -16'sd30, 16'sd0, 16'sd10},
             -16'sd300,

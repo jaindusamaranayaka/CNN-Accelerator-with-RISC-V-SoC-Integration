@@ -11,24 +11,25 @@ module tb_slidingWindowAXI;
     logic m_axis_tvalid;
     logic m_axis_tready;
 
-    slidingWindowAXI
+    slidingWindowAXI #(.DATA_WIDTH(DATA_WIDTH),
                            .ROW_LENGTH(ROW_LENGTH)) dut (.*);
-
-    initial begin
+    
+    initial begin // Clock Driver
         clk = 0;
-        forever
+        forever #5 clk = ~clk;
     end
 
     initial begin
         $dumpfile("dump.vcd");$dumpvars(0,dut);
         rstn = 0;
+        #10;
         rstn = 1;
         m_axis_tready = 1;
         s_axis_tvalid = 1;
       for (int i = 1; i < 65; i++) begin
           	@(negedge clk);
             s_axis_tdata = i;
-
+            
         end
         @(negedge clk);
         $finish();
@@ -43,7 +44,7 @@ module tb_slidingWindowAXI;
         if (expected_valid == m_axis_tvalid) begin
         end else begin
             $display("expected_valid = %0d not matching m_axis_tvalid = %0d, n = %0d, time = %0d", expected_valid, m_axis_tvalid, n, $time);
-
+        
         end
     end
 
@@ -53,7 +54,7 @@ module tb_slidingWindowAXI;
         idx = n - offset;
         if (idx < 0)
             return '0;
-        else
+        else 
             return sent_pixels[idx];
     endfunction
 
@@ -89,7 +90,7 @@ module tb_slidingWindowAXI;
     end
 
 
-    always @(negedge clk) begin
+    always @(negedge clk) begin // Checker
         if (m_axis_tvalid) begin
             logic right_ok, left_ok, top_ok, bottom_ok;
             logic [DATA_WIDTH-1:0] expected_masked;
@@ -130,7 +131,7 @@ module tb_slidingWindowAXI;
             expected_masked = (left_ok && bottom_ok) ? predict(n-1, 2) : '0;
             if (m_axis_tdata[2][2] !== expected_masked)
                 $display("MISMATCH [2][2] at time %0t: expected %0d, got %0d",$time, expected_masked, m_axis_tdata[2][2]);
-
+            
 
         end
 

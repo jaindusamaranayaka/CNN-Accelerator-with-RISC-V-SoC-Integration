@@ -16,9 +16,9 @@ module quant_sat_tb;
 
     int errors =0;
 
-    always
+    always #(CLK_PERIOD/2) clk = ~clk;
 
-    quant_sat_unit
+    quant_sat_unit #(
         .OUT_WIDTH(OUT_WIDTH),
         .SUM_WIDTH(SUM_WIDTH),
         .SHIFT_WIDTH(SHIFT_WIDTH)
@@ -57,6 +57,7 @@ module quant_sat_tb;
         $display("Passed: expected %0d, got %0d", exp, data_out);
      end
 
+    // waiting valid_out be zero before the next test
     wait (valid_out === 1'b0);
     endtask
 
@@ -65,17 +66,21 @@ module quant_sat_tb;
         valid_in = 0;
         sum_in = '0;
         shift_s = '0;
+        #(CLK_PERIOD*2) rst_n = 1;
 
+        //test_1 -5 >> 2 gives -2
         quant(-20'sd5,5'sd2,-8'sd2);
 
+        //test_2
         quant(20'sd177928,5'sd2,8'sd127);
 
+        //test_3
         quant(-20'sd1600,5'sd2,-8'sd128);
 
         quant(20'sd127,5'sd0,8'sd127);
 
         quant(-20'sd7,5'sd1,-8'sd4);
-
+        
         if (errors == 0)
             $display(">>> adder_tree_tb PASSED");
         else

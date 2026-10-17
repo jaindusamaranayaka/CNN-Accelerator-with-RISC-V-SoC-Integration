@@ -1,5 +1,5 @@
 
-module mac_array
+module mac_array #(
     parameter DATA_WIDTH = 8,
     parameter PROD_WIDTH = 16,
     parameter NUM_TAPS = 9
@@ -13,9 +13,9 @@ module mac_array
     output logic                            valid_out
 );
     genvar i;
-    generate
+    generate 
         for (i = 0; i<NUM_TAPS; i++) begin : gen_mac_lane
-         mac_unit
+         mac_unit#(
             .DATA_WIDTH(DATA_WIDTH),
             .PROD_WIDTH(PROD_WIDTH)
          )u_mac (
@@ -28,13 +28,15 @@ module mac_array
         end
     endgenerate
 
+    // staling the valid stage to match the datapath 
+    // Mac unit depth is 2 if it changes-- change the stalling code below also by the same value
     logic valid_stage_1;
 
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk or negedge rst_n) begin // stalling by 2 cycles
         if(!rst_n)begin
             valid_stage_1 <= '0;
             valid_out <='0;
-        end else begin
+        end else begin 
             valid_stage_1 <= valid_in;
             valid_out <= valid_stage_1;
             end

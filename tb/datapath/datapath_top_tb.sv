@@ -20,9 +20,9 @@ module datapath_top_tb;
 
     int errors = 0;
 
-    always
+    always #(CLK_PERIOD/2) clk = ~clk;
 
-    datapath_top
+    datapath_top #(
         .DATA_WIDTH  (DATA_WIDTH),
         .PROD_WIDTH  (PROD_WIDTH),
         .SHIFT_WIDTH (SHIFT_WIDTH),
@@ -79,7 +79,11 @@ module datapath_top_tb;
         weights  = '0;
         bias     = '0;
         shift_s  = '0;
+        #(CLK_PERIOD*2) rst_n = 1;
 
+        // Case 1: original worked example
+        // products = {10,0,-30,10,0,50,-10,0,-40}, bias=5, shift=2
+        // S_raw=-5, S_scaled=-2, no clamp, ReLU(-2) = 0
         run_case("case1_worked_example",
             {8'sd40, 8'sd0, -8'sd10, -8'sd25, 8'sd15, 8'sd5, 8'sd30, 8'sd20, 8'sd10},
             {-8'sd1, 8'sd0,  8'sd1,  -8'sd2,  8'sd0,  8'sd2, -8'sd1,  8'sd0,  8'sd1},
@@ -88,6 +92,8 @@ module datapath_top_tb;
             8'sd0
         );
 
+        // Case 2: all-ones passthrough
+        // 9 products of 1*1=1, sum=9, bias=0, shift=0 -> S_raw=9, no clamp, ReLU(9)=9
         run_case("case2_all_ones",
             {9{8'sd1}},
             {9{8'sd1}},
@@ -96,6 +102,9 @@ module datapath_top_tb;
             8'sd9
         );
 
+        // Case 3: full saturation
+        // 9 products of 127*127=16129, sum=145161, bias=0, shift=0
+        // S_scaled=145161 > 127 -> clamp to 127, ReLU(127)=127
         run_case("case3_saturation",
             {9{8'sd127}},
             {9{8'sd127}},

@@ -3,11 +3,12 @@ module tb_slidingWindowAXIBRAM;
 
     localparam int DATA_WIDTH       = 8;
     localparam int ROW_LENGTH       = 5;
-    localparam bit PADDING          = 0;
-    localparam int FRAMES           = 2;
-    localparam int DRAIN            = PADDING ? (ROW_LENGTH + 3) : 2;
-    localparam int EXPECTED_WINDOWS = FRAMES * (PADDING ? (ROW_LENGTH * ROW_LENGTH)
-                                                        : ((ROW_LENGTH - 2) * (ROW_LENGTH - 2)));
+    localparam bit PADDING = 0;
+    localparam int DRAIN = PADDING ? (ROW_LENGTH + 3) : 2;
+    localparam int FRAMES = 2;
+    localparam int EXPECTED_WINDOWS = FRAMES * (PADDING ? (ROW_LENGTH * ROW_LENGTH) : ((ROW_LENGTH - 2) * (ROW_LENGTH - 2)));
+    
+
 
     logic                  clk;
     logic                  rstn;
@@ -27,7 +28,7 @@ module tb_slidingWindowAXIBRAM;
     logic                  expected_valid;
     int                    transfers = 0;
 
-    slidingWindowAXIBRAM
+    slidingWindowAXIBRAM #(
         .DATA_WIDTH(DATA_WIDTH),
         .ROW_LENGTH(ROW_LENGTH),
         .PADDING(PADDING)
@@ -35,7 +36,7 @@ module tb_slidingWindowAXIBRAM;
 
     initial begin
         clk = 0;
-        forever
+        forever #5 clk = ~clk;
     end
 
     initial begin
@@ -43,11 +44,10 @@ module tb_slidingWindowAXIBRAM;
         $dumpvars(0, dut);
 
         rstn          = 0;
+        #10;
         rstn          = 1;
         m_axis_tready = 1;
         s_axis_tvalid = 1;
-        s_axis_tuser  = 0;
-
         for (int f = 0; f < FRAMES; f++) begin
             for (int i = 0; i < ROW_LENGTH * ROW_LENGTH; i++) begin
                 @(negedge clk);
@@ -61,7 +61,6 @@ module tb_slidingWindowAXIBRAM;
                 s_axis_tuser = 0;
             end
         end
-
         @(negedge clk);
         s_axis_tvalid = 0;
         repeat (2) @(negedge clk);
@@ -95,6 +94,13 @@ module tb_slidingWindowAXIBRAM;
     always @(posedge clk) begin
         if (rstn && m_axis_tvalid && m_axis_tready)
             transfers++;
+    end
+
+    always_comb begin
+        logic right, left, top, bottom;
+        get_masks(n, right, left, top, bottom);
+        expected_valid = (n >= ROW_LENGTH + 4) && tb_pending && (PADDING || (right && left && top && bottom));
+
     end
 
     function automatic logic [DATA_WIDTH-1:0] predict(int n, int offset);
@@ -132,13 +138,6 @@ module tb_slidingWindowAXIBRAM;
         top_ok    = (center_row >= 1);
         bottom_ok = (center_row <= ROW_LENGTH - 2);
     endfunction
-
-    always_comb begin
-        logic r_ok, l_ok, t_ok, b_ok;
-        get_masks(n, r_ok, l_ok, t_ok, b_ok);
-        expected_valid = (n >= ROW_LENGTH + 4) && tb_pending
-                         && (PADDING || (r_ok && l_ok && t_ok && b_ok));
-    end
 
     always @(negedge clk) begin
         if (expected_valid != m_axis_tvalid)
@@ -190,5 +189,4 @@ module tb_slidingWindowAXIBRAM;
                 $display("MISMATCH [2][2] at time %0t: expected %0d, got %0d", $time, expected_masked, m_axis_tdata[2][2]);
         end
     end
-
 endmodule

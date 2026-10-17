@@ -15,11 +15,12 @@ module mac_tb;
     logic signed [PROD_WIDTH*NUM_TAPS-1:0] products;
     logic valid_out;
 
+    // Expected products, tap0..tap8 (same order as the worked example)
     logic signed [PROD_WIDTH-1:0] expected [0:8];
 
     int errors = 0;
 
-    mac_array
+    mac_array #(
         .DATA_WIDTH (DATA_WIDTH),
         .PROD_WIDTH (PROD_WIDTH),
         .NUM_TAPS   (NUM_TAPS)
@@ -33,7 +34,7 @@ module mac_tb;
         .valid_out (valid_out)
     );
 
-    always
+    always #(CLK_PERIOD/2) clk = ~clk;
 
     initial begin
         rst_n    = 0;
@@ -41,6 +42,7 @@ module mac_tb;
         pixels   = '0;
         weights  = '0;
 
+        // tap0..tap8, matching Stage 1 of the worked example
         expected[0] = 16'sd10;
         expected[1] = 16'sd0;
         expected[2] = -16'sd30;
@@ -51,6 +53,7 @@ module mac_tb;
         expected[7] = 16'sd0;
         expected[8] = -16'sd40;
 
+        #(CLK_PERIOD*2) rst_n = 1;
 
         @(posedge clk);
         pixels   = {8'sd40, 8'sd0, -8'sd10, -8'sd25, 8'sd15, 8'sd5, 8'sd30, 8'sd20, 8'sd10};
@@ -63,8 +66,9 @@ module mac_tb;
         pixels   = '0;
         weights  = '0;
 
+        // 2-cycle pipeline latency: wait for valid_out to assert
         wait (valid_out === 1'b1);
-        @(posedge clk);
+        @(posedge clk); // let products settle on this same edge before sampling
 
         for (int i = 0; i < NUM_TAPS; i++) begin
             logic signed [PROD_WIDTH-1:0] got;

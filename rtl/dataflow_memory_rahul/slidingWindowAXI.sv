@@ -1,17 +1,19 @@
 `include "lineBufferAXI.sv"
 `timescale 1ns / 1ps
 
-module slidingWindowAXI
+module slidingWindowAXI #(
     parameter int DATA_WIDTH = 8,
     parameter int ROW_LENGTH = 8
 ) (
     input logic clk,
     input logic rstn,
 
+    // Input Pixel Stream (Slave)
     input logic [DATA_WIDTH-1:0] s_axis_tdata,
     input logic s_axis_tvalid,
     output logic s_axis_tready,
 
+    // 3x3 Matrix Output Stream (Master)
     output logic [DATA_WIDTH-1:0] m_axis_tdata [0:2] [0:2],
     output logic m_axis_tvalid,
     input logic m_axis_tready
@@ -33,7 +35,7 @@ module slidingWindowAXI
         end else begin
             if (en) begin
                 pixel_count <= pixel_count + 1'b1;
-
+                
             end
         end
     end
@@ -52,7 +54,7 @@ module slidingWindowAXI
 
     assign window_valid = (pixel_count >= ROW_LENGTH + 2);
 
-    always_ff @(posedge clk or negedge rstn) begin
+    always_ff @(posedge clk or negedge rstn) begin // Horizontal
         if (!rstn) begin
             live_col <= '0;
         end else begin
@@ -69,7 +71,7 @@ module slidingWindowAXI
     logic [DATA_WIDTH-1:0] line_out_1;
     logic [DATA_WIDTH-1:0] line_out_2;
 
-    lineBufferAXI
+    lineBufferAXI #(
         .DATA_WIDTH(DATA_WIDTH),
         .ROW_LENGTH(ROW_LENGTH)
     ) buffer1 (
@@ -80,7 +82,7 @@ module slidingWindowAXI
         .data_out(line_out_1)
     );
 
-    lineBufferAXI
+    lineBufferAXI #(
         .DATA_WIDTH(DATA_WIDTH),
         .ROW_LENGTH(ROW_LENGTH)
     ) buffer2 (
@@ -133,10 +135,10 @@ module slidingWindowAXI
     end
 
 
-    assign right_ok = (center_col <= ROW_LENGTH - 2);
-    assign left_ok  = (center_col >= 1);
-    assign top_ok   = (center_row >= 1);
-    assign bottom_ok = (center_row <= ROW_LENGTH - 2);
+    assign right_ok = (center_col <= ROW_LENGTH - 2);  
+    assign left_ok  = (center_col >= 1);            
+    assign top_ok   = (center_row >= 1);     
+    assign bottom_ok = (center_row <= ROW_LENGTH - 2);        
     always_comb begin
         m_axis_tdata[0][0] = (top_ok && right_ok) ? reg_row_3[0] : '0;
         m_axis_tdata[0][1] = (top_ok)             ? reg_row_3[1] : '0;

@@ -45,7 +45,7 @@ module tb_slidingWindowAXIBRAMRandomized;
 
     StallGen sg = new();
 
-    slidingWindowAXIBRAM
+    slidingWindowAXIBRAM #(
         .DATA_WIDTH(DATA_WIDTH),
         .ROW_LENGTH(ROW_LENGTH),
         .PADDING(PADDING)
@@ -53,7 +53,7 @@ module tb_slidingWindowAXIBRAMRandomized;
 
     initial begin
         clk = 0;
-        forever
+        forever #5 clk = ~clk;
     end
 
     initial begin
@@ -61,6 +61,7 @@ module tb_slidingWindowAXIBRAMRandomized;
         $dumpvars(0, dut);
 
         rstn          = 0;
+        #10;
         rstn          = 1;
         m_axis_tready = 1;
         s_axis_tvalid = 1;

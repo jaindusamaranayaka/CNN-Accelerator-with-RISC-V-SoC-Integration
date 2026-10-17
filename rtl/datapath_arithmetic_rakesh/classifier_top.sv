@@ -19,7 +19,7 @@ module classifier_top (
     logic pool_valid;
     logic [7:0] pool_data;
 
-    max_pool_2d
+    max_pool_2d #(
         .WIDTH(26),
         .DATA_WIDTH(8)
     ) pool (
