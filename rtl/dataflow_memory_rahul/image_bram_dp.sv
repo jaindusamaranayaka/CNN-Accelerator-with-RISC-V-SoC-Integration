@@ -1,7 +1,7 @@
 module image_bram_dp #(
     parameter int DEPTH_WORDS = 512,
-    localparam int WADDR_W = $clog2(DEPTH_WORDS) ,// Word address width
-    localparam int BADDR_W = $clog2(DEPTH_WORDS) + 2 // Byte address width
+    parameter int WADDR_W = $clog2(DEPTH_WORDS), // Word address width
+    parameter int BADDR_W = $clog2(DEPTH_WORDS) + 2 // Byte address width
 ) (
     input logic clk,
     input logic a_we,

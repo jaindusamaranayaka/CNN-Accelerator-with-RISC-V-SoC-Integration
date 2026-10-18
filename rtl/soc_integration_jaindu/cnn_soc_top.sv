@@ -1,5 +1,8 @@
 `timescale 1 ns / 1 ps
-module cnn_soc_top (
+module cnn_soc_top #(
+    parameter CLK_FREQ  = 50000000,
+    parameter BAUD_RATE = 115200
+)(
     input  logic        CLOCK_50,
     input  logic [3:0]  KEY,
     input  logic        UART_RXD,
@@ -86,20 +89,49 @@ module cnn_soc_top (
         .gpio_rdata     (gpio_rdata),
         .class_weight_valid(class_weight_valid)
     );
-    logic [31:0] ram_memory [0:16383];
-    initial $readmemh("firmware.hex", ram_memory);
+    logic [7:0] bank_rdata [3:0];
+
+    soc_ram_byte_lane #(.MIF_FILE("firmware_0.mif"), .HEX_FILE("firmware_0.hex")) bank0 (
+        .clk(clk),
+        .we(ram_valid && mem_wstrb[0]),
+        .addr(mem_addr[15:2]),
+        .wdata(mem_wdata[7:0]),
+        .rdata(bank_rdata[0])
+    );
+    soc_ram_byte_lane #(.MIF_FILE("firmware_1.mif"), .HEX_FILE("firmware_1.hex")) bank1 (
+        .clk(clk),
+        .we(ram_valid && mem_wstrb[1]),
+        .addr(mem_addr[15:2]),
+        .wdata(mem_wdata[15:8]),
+        .rdata(bank_rdata[1])
+    );
+    soc_ram_byte_lane #(.MIF_FILE("firmware_2.mif"), .HEX_FILE("firmware_2.hex")) bank2 (
+        .clk(clk),
+        .we(ram_valid && mem_wstrb[2]),
+        .addr(mem_addr[15:2]),
+        .wdata(mem_wdata[23:16]),
+        .rdata(bank_rdata[2])
+    );
+    soc_ram_byte_lane #(.MIF_FILE("firmware_3.mif"), .HEX_FILE("firmware_3.hex")) bank3 (
+        .clk(clk),
+        .we(ram_valid && mem_wstrb[3]),
+        .addr(mem_addr[15:2]),
+        .wdata(mem_wdata[31:24]),
+        .rdata(bank_rdata[3])
+    );
+
+    assign ram_rdata = {bank_rdata[3], bank_rdata[2], bank_rdata[1], bank_rdata[0]};
+
     always_ff @(posedge clk) begin
         ram_ready <= 1'b0;
         if (ram_valid && !ram_ready) begin
             ram_ready <= 1'b1;
-            if (mem_wstrb[0]) ram_memory[mem_addr[15:2]][ 7: 0] <= mem_wdata[ 7: 0];
-            if (mem_wstrb[1]) ram_memory[mem_addr[15:2]][15: 8] <= mem_wdata[15: 8];
-            if (mem_wstrb[2]) ram_memory[mem_addr[15:2]][23:16] <= mem_wdata[23:16];
-            if (mem_wstrb[3]) ram_memory[mem_addr[15:2]][31:24] <= mem_wdata[31:24];
-            ram_rdata <= ram_memory[mem_addr[15:2]];
         end
     end
-    uart_serial_controller uart (
+    uart_serial_controller #(
+        .CLK_FREQ  (CLK_FREQ),
+        .BAUD_RATE (BAUD_RATE)
+    ) uart (
         .clk     (clk),
         .resetn  (resetn),
         .valid   (uart_valid),
@@ -187,12 +219,11 @@ module cnn_soc_top (
     logic [71:0] dp_weights;
     logic [15:0] dp_bias;
     logic [ 4:0] dp_shift_s;
-    logic        dp_enable;
+    wire         dp_enable = 1'b1;
     logic        result_ready;
     logic [31:0] result_latch;
     always_ff @(posedge clk or negedge resetn) begin
         if (!resetn) begin
-            dp_enable   <= 1'b1;
             re_start    <= 1'b0;
             img_base    <= '0;
             img_len     <= '0;
@@ -336,3 +367,32 @@ module cnn_soc_top (
     assign HEX6 = hex_decode(gpio_out[27:24]);
     assign HEX7 = hex_decode(gpio_out[31:28]);
 endmodule
+ 
+module soc_ram_byte_lane #(
+    parameter string MIF_FILE = "",
+    parameter string HEX_FILE = ""
+)(
+    input  logic        clk,
+    input  logic        we,
+    input  logic [13:0] addr,
+    input  logic [ 7:0] wdata,
+    output logic [ 7:0] rdata
+);
+    (* ram_init_file = MIF_FILE, ramstyle = "no_rw_check, M9K" *) logic [7:0] mem [0:16383];
+
+// synthesis translate_off
+    initial begin
+        if (HEX_FILE != "") begin
+            $readmemh(HEX_FILE, mem);
+        end
+    end
+// synthesis translate_on
+
+    always_ff @(posedge clk) begin
+        if (we) begin
+            mem[addr] <= wdata;
+        end
+        rdata <= mem[addr];
+    end
+endmodule
+

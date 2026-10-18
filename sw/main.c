@@ -102,7 +102,7 @@ int main(void) {
     display_hex(0x00000000);
 
     // Boot: receive conv weights, bias, shift, 1690 dense weights and 10 biases once
-    static bool weights_loaded = false;
+    bool weights_loaded = false;
 
     while (1) {
         char token = uart_getchar();

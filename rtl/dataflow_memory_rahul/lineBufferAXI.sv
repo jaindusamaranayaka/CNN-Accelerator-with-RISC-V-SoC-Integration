@@ -1,3 +1,6 @@
+`ifndef LINE_BUFFER_AXI_SV
+`define LINE_BUFFER_AXI_SV
+
 `timescale 1ns / 1ps
 
 module lineBufferAXI #(
@@ -26,3 +29,4 @@ module lineBufferAXI #(
 
     assign data_out = buffer[ROW_LENGTH-1];
 endmodule
+`endif

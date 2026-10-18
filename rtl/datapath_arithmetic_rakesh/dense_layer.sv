@@ -15,7 +15,7 @@ module dense_layer (
     output logic        valid_out,
     output logic signed [31:0] logits [0:9]
 );
-    logic signed [7:0] w_mem [0:9][0:195];
+    logic signed [7:0] w_mem [0:9][0:168];
     logic signed [15:0] biases [0:9];
 
     wire [3:0] nid = weight_addr[13:10];
@@ -25,7 +25,7 @@ module dense_layer (
         if (weight_wr_en) begin
             if (weight_addr[15:10] == 6'h0A && pid < 10) begin
                 biases[pid] <= weight_wdata[15:0];
-            end else if (nid < 10 && pid < 196) begin
+            end else if (nid < 10 && pid < 169) begin
                 w_mem[nid][pid] <= weight_wdata[7:0];
             end
         end
@@ -55,11 +55,11 @@ module dense_layer (
                     accum[i] <= accum[i] + $signed({1'b0, data_in}) * w_mem[i][pixel_count];
                 end
 
-                if (pixel_count == 195) begin
+                if (pixel_count == 168) begin
                     pixel_count <= 0;
                     valid_out <= 1;
                     for (int i=0; i<10; i++) begin
-                        logits[i] <= accum[i] + $signed({1'b0, data_in}) * w_mem[i][pixel_count] + biases[i];
+                        logits[i] <= accum[i] + $signed({1'b0, data_in}) * w_mem[i][pixel_count] + {{16{biases[i][15]}}, biases[i]};
                         accum[i] <= 0;
                     end
                 end else begin

@@ -26,6 +26,7 @@ SECTIONS
         *(.bss)
         *(.bss.*)
         *(COMMON)
+        . = ALIGN(4);
         _ebss = .;
     } > RAM
 }
