@@ -30,3 +30,4 @@ tb/**/transcript
 *.o
 *.elf
 *.bin
+*.ipynb
